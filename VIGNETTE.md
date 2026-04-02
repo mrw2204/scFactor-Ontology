@@ -1,7 +1,7 @@
 
-# ontology-tools vignette
+# scFO vignette
 
-This vignette shows a typical end-to-end workflow for `ontology_tools` using:
+This vignette shows a typical end-to-end workflow for `scfo` using:
 
 - `factor_loadings`: gene-by-factor loading matrix
 - `regulon_loadings`: gene-by-regulon loading matrix
@@ -17,7 +17,7 @@ pip install -e /path/to/ontology_tools_pkg_release
 ## Imports
 
 ```python
-from ontology_tools import (
+from scfo import (
     make_ontology,
     project_ontology,
     diff_exp_ontology,
@@ -344,7 +344,7 @@ ontology2 = load_ontology_excel(
 ## End-to-end example
 
 ```python
-from ontology_tools import (
+from scfo import (
     make_ontology,
     project_ontology,
     diff_exp_ontology,
@@ -462,7 +462,7 @@ reg_loadings_tumor = modality_feature_loadings_to_df(ontology, "regulons", cell_
 ### Plot genes or factors for a modality feature
 
 ```python
-from ontology_tools import plot_modality_feature_top_items
+from scfo import plot_modality_feature_top_items
 
 # top genes contributing to a regulon in Tumor
 fig, ax = plot_modality_feature_top_items(
