@@ -32,8 +32,8 @@ plugins:
             show_root_full_path: false
             show_signature_annotations: true
             heading_level: 3
-            docstring_style: google
-            docstring_section_style: table
+            docstring_style: numpy
+            docstring_section_style: list
             separate_signature: true
             show_symbol_type_heading: false
             show_symbol_type_toc: false
