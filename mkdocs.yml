@@ -1,6 +1,16 @@
 site_name: scFactor-Ontology
+site_url: https://scfactor-ontology.readthedocs.io/en/latest/
+repo_url: https://github.com/mrw2204/scFactor-Ontology
+repo_name: mrw2204/scFactor-Ontology
+
 theme:
-  name: readthedocs
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+    - search.share
 
 docs_dir: docs
 
@@ -12,10 +22,26 @@ nav:
 plugins:
   - search
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
+          paths: [src]
           options:
             show_source: false
             show_root_heading: true
             show_root_full_path: false
             show_signature_annotations: true
+            heading_level: 3
+            docstring_style: google
+            docstring_section_style: list
+            separate_signature: true
+            show_symbol_type_heading: false
+            show_symbol_type_toc: false
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+
