@@ -28,7 +28,7 @@ Portable utilities for building, querying, projecting, and exporting **factor-ce
   - `receptor_complex`
   - `magnitude_rank`
   - `specificity_rank`
-- LIANA signatures are built using the original pairwise sender/receiver logic (`magnitude_rank * specificity_rank` with per-block z-scoring and factor-support filtering), then matched to the corresponding factor lineage during ontology assembly so the final LR modalities expose the shared 11 contexts per direction rather than all 121 pairwise contexts.
+- LIANA signatures are built using the original pairwise sender/receiver logic (`magnitude_rank * specificity_rank` with per-block z-scoring and factor-support filtering), then matched to the corresponding factor lineage during ontology assembly.
 
 ## Install
 
