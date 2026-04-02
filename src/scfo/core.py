@@ -760,6 +760,22 @@ def _filter_factor_index_by_cell_types(index: pd.Index, ontology: mu.MuData, cel
 
 
 def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
+    """Return a modality score matrix as a DataFrame.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    modality : str
+        Name of the modality to extract.
+    cell_types : str or sequence of str, optional
+        Restrict returned factor rows to selected ontology lineages.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Factor-by-feature score matrix for the requested modality.
+    """
     mod = ontology.mod[modality]
     df = pd.DataFrame(as_dense(mod.X), index=mod.obs_names, columns=mod.var_names)
     keep = _filter_factor_index_by_cell_types(df.index, ontology, cell_types)
@@ -767,6 +783,22 @@ def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Option
 
 
 def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optional[Union[str, Sequence[str]]] = None) -> Optional[pd.DataFrame]:
+    """Return modality p-values as a DataFrame.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    modality : str
+        Name of the modality to extract.
+    cell_types : str or sequence of str, optional
+        Restrict returned factor rows to selected ontology lineages.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Factor-by-feature p-value matrix if available, otherwise ``None``.
+    """
     mod = ontology.mod[modality]
     if "pval" not in mod.layers:
         return None
@@ -776,15 +808,21 @@ def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optiona
 
 
 def factor_weights_to_df(ontology: mu.MuData, transpose: bool = False, cell_types: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
-    """Return ontology weights as a DataFrame.
+    """Return global factor weights as a pandas DataFrame.
 
     Parameters
     ----------
-    transpose
-        If False, return factor x gene. If True, return gene x factor.
-    cell_types
-        Optional ontology classifications to keep. Filtering is applied on the
-        factor axis before any transpose.
+    ontology : muon.MuData
+        Ontology object.
+    cell_types : str or sequence of str, optional
+        Restrict returned factors to selected ontology lineages.
+    transpose : bool, default=False
+        If ``False``, return ``factor x gene``. If ``True``, return ``gene x factor``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame representation of ``ontology.obsm['weights']``.
     """
     if "weights" not in ontology.obsm:
         raise KeyError("ontology.obsm['weights'] not found.")
@@ -808,14 +846,24 @@ def modality_feature_loadings_to_df(
     key: Optional[str] = None,
     cell_types: Optional[Union[str, Sequence[str]]] = None,
 ) -> pd.DataFrame:
-    """Return modality feature loadings as a gene x feature DataFrame.
+    """Return a modality loading matrix as a DataFrame.
 
-    If ``key`` is None and the modality stores lineage-specific ``varm`` matrices
-    (e.g. ``Tumor_regulons``), then:
-      - if ``cell_types`` is given, return only the matching lineage-specific
-        matrices
-      - otherwise return all lineage-specific matrices concatenated along
-        columns with ``|<cell_type>`` appended to column names.
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    modality : str
+        Name of the modality to extract.
+    key : str, optional
+        Specific ``varm`` key to extract. If omitted, the first available loading matrix
+        is used.
+    cell_types : str or sequence of str, optional
+        Restrict returned features to lineage-matched loading matrices when available.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Gene-by-feature loading matrix.
     """
     mod = ontology.mod[modality]
     varm_keys = list(mod.varm.keys())
