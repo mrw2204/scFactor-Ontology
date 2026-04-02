@@ -33,7 +33,7 @@ Portable utilities for building, querying, projecting, and exporting **factor-ce
 ## Install
 
 ```bash
-pip install -e /path/to/ontology_tools_pkg_release
+pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
 ```
 
 ## Quick start
