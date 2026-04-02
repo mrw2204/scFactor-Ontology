@@ -1,5 +1,5 @@
 
-# ontology-tools vignette
+# Single Cell Factor Ontology (scFO) vignette
 
 This vignette shows a typical end-to-end workflow for `scfo` using:
 
