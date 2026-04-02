@@ -578,6 +578,57 @@ def make_ontology(
     plot_liana_scores: bool = True,
     liana_plot_size: float = 0.1,
 ) -> mu.MuData:
+    """Build a factor-centric ontology object from factor loadings and optional annotation modalities.
+
+    Parameters
+    ----------
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix. Rows must be genes and columns must be factors.
+        Factor names are expected to follow the convention ``FactorN|CellType`` so that
+        lineage information can be parsed automatically.
+    factor_type : str, default="MOFA"
+        Label describing the source of the factor loadings.
+    n_iter : int, default=1000
+        Number of permutations to use for permutation-based enrichment steps.
+    cell_types : sequence of str, optional
+        Ordered list of ontology cell types to use when matching lineage-specific
+        regulon and ligand–receptor annotations.
+    hallmark_lib : mapping or str, optional
+        Gene set collection for hallmark-style enrichment.
+    gene_sets : mapping or str, optional
+        Additional gene sets for factor annotation.
+    sender_loadings : pandas.DataFrame, optional
+        Precomputed ligand-side paired signature matrix.
+    receiver_loadings : pandas.DataFrame, optional
+        Precomputed receptor-side paired signature matrix.
+    liana : pandas.DataFrame, optional
+        Raw LIANA results table. If provided and sender/receptor loadings are not given,
+        paired ligand and receptor signatures will be constructed automatically.
+    liana_z_threshold : float, default=0.0
+        Minimum LIANA z-score for retaining ligand–receptor pairs.
+    factor_z_threshold : float, default=0.0
+        Minimum factor-support z-score for retaining ligand–receptor pairs.
+    regulon_loadings : pandas.DataFrame, optional
+        Gene-by-regulon loading matrix. Column names should follow the convention
+        ``TF(+)|CellType`` when lineage-specific regulons are used.
+    cell_type_regulons : bool, default=True
+        Whether regulon columns are lineage-specific.
+    cell_type_separator : str, default="|"
+        Separator used in factor and regulon names.
+    feature_loading_key_map : mapping, optional
+        Optional mapping to override the names of modality-specific loading matrices
+        stored in ``varm``.
+    plot_liana_scores : bool, default=False
+        Whether to display the LIANA filtering scatterplot during ontology construction.
+    liana_plot_size : float, default=2.0
+        Marker size for the LIANA filtering scatterplot.
+
+    Returns
+    -------
+    muon.MuData
+        Factor-centric ontology object with factors in ``obs``, global weights in
+        ``obsm['weights']``, and annotation modalities in ``mod``.
+    """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings")
     if fl.empty:
         raise ValueError("factor_loadings is empty.")
