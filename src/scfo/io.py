@@ -30,6 +30,22 @@ def export_ontology_excel(
     outdir: Union[str, Path] = ".",
     prefix: str = "ontology",
 ) -> Dict[str, str]:
+    """Export an ontology object to standardized Excel workbooks.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    outdir : str or pathlib.Path, default='.'
+        Output directory.
+    prefix : str, default='ontology'
+        Filename prefix.
+
+    Returns
+    -------
+    dict
+        Mapping with paths to the scores and features workbooks.
+    """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     scores_path = outdir / f"{prefix}_scores.xlsx"
@@ -92,6 +108,24 @@ def load_ontology_excel(
     factor_type: str = "unknown",
     cell_type_separator: str = "|",
 ) -> mu.MuData:
+    """Reconstruct an ontology object from standardized Excel exports.
+
+    Parameters
+    ----------
+    scores_xlsx : str or pathlib.Path
+        Path to the workbook containing scores, p-values, and factor metadata.
+    features_xlsx : str or pathlib.Path
+        Path to the workbook containing feature metadata and loading matrices.
+    factor_type : str, default='unknown'
+        Label stored in the reconstructed ontology metadata.
+    cell_type_separator : str, default='|'
+        Separator used in factor naming.
+
+    Returns
+    -------
+    muon.MuData
+        Reconstructed ontology object.
+    """
     scores_xlsx = Path(scores_xlsx)
     features_xlsx = Path(features_xlsx)
     scores_manifest = pd.read_excel(scores_xlsx, sheet_name="MANIFEST")
