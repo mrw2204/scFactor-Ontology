@@ -122,7 +122,7 @@ The package builds LIANA-derived ontology modalities from the original paired-si
 - ligand-side rows: `sender_cell_type|ligand_gene`, columns: `rec by|receiver_cell_type`
 - receptor-side rows: `receiver_cell_type|receptor_gene`, columns: `sent by|sender_cell_type`
 
-During ontology assembly, each factor is enriched only against the matching lineage-specific signature block. The final `liana_ligand` and `liana_receptor` modalities therefore expose the **shared 11 paired-context columns**, while lineage-specific signature definitions are preserved in `varm`.
+During ontology assembly, each factor is enriched only against the matching lineage-specific signature block. The final `liana_ligand` and `liana_receptor` modalities therefore expose the **shared pair-wise sender/receiver columns**, while lineage-specific signature definitions are preserved in `varm`.
 
 ## Recent changes
 
