@@ -11,7 +11,7 @@ This vignette shows a typical end-to-end workflow for `scfo` using:
 ## Installation
 
 ```bash
-pip install -e /path/to/ontology_tools_pkg_release
+pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
 ```
 
 ## Imports
