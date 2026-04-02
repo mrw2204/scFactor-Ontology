@@ -1,7 +1,7 @@
 
 # ontology-tools vignette
 
-This vignette shows a typical end-to-end workflow for `ontology_tools` using:
+This vignette shows a typical end-to-end workflow for `scfo` using:
 
 - `factor_loadings`: gene-by-factor loading matrix
 - `regulon_loadings`: gene-by-regulon loading matrix
@@ -11,13 +11,13 @@ This vignette shows a typical end-to-end workflow for `ontology_tools` using:
 ## Installation
 
 ```bash
-pip install -e /path/to/ontology_tools_pkg_release
+pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
 ```
 
 ## Imports
 
 ```python
-from ontology_tools import (
+from scfo import (
     make_ontology,
     project_ontology,
     diff_exp_ontology,
@@ -96,8 +96,6 @@ For the final ontology:
 - Internally, LIANA signatures are first constructed in the full pairwise form (for example `Tumor|rec by|Pericyte` and `Tumor|sent by|Pericyte`) so that each factor is enriched only against the matching lineage-specific LR signatures, mirroring the original analysis logic. In the final ontology object, these are collapsed to the shared 11-context views described above, while lineage-specific signature matrices are preserved in `varm`.
 - enrichment is computed only against the factor's own lineage-specific LR signatures
 - lineage-specific LR definitions are stored in `varm`
-
-So each LIANA modality has **11 columns**, not 121.
 
 ## Build the ontology
 
@@ -346,7 +344,7 @@ ontology2 = load_ontology_excel(
 ## End-to-end example
 
 ```python
-from ontology_tools import (
+from scfo import (
     make_ontology,
     project_ontology,
     diff_exp_ontology,
@@ -464,7 +462,7 @@ reg_loadings_tumor = modality_feature_loadings_to_df(ontology, "regulons", cell_
 ### Plot genes or factors for a modality feature
 
 ```python
-from ontology_tools import plot_modality_feature_top_items
+from scfo import plot_modality_feature_top_items
 
 # top genes contributing to a regulon in Tumor
 fig, ax = plot_modality_feature_top_items(
