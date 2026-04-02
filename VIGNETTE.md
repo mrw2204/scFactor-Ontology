@@ -97,8 +97,6 @@ For the final ontology:
 - enrichment is computed only against the factor's own lineage-specific LR signatures
 - lineage-specific LR definitions are stored in `varm`
 
-So each LIANA modality has **11 columns**, not 121.
-
 ## Build the ontology
 
 ```python
