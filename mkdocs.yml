@@ -22,7 +22,6 @@ nav:
 plugins:
   - search
   - mkdocstrings:
-      default_handler: python
       handlers:
         python:
           paths:
