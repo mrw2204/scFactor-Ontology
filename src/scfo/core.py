@@ -323,6 +323,7 @@ def make_filtered_lr_signatures(
 
     Returns
     -------
+    
     all_send_signatures
         Rows are ``sender_cell_type|ligand_gene`` and columns are ``rec by|receiver_cell_type``.
     all_rec_signatures
@@ -461,6 +462,7 @@ def lr_enrichment(
 
     Expected lr_loadings structure
     ------------------------------
+    
     direction='ligand'
         rows: <sender_cell_type>|<ligand_gene>
         cols: rec by|<receiver_cell_type>
@@ -582,6 +584,7 @@ def make_ontology(
 
     Parameters
     ----------
+    
     factor_loadings : pandas.DataFrame
         Gene-by-factor loading matrix. Rows must be genes and columns must be factors.
         Factor names are expected to follow the convention ``FactorN|CellType`` so that
@@ -764,6 +767,7 @@ def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Option
 
     Parameters
     ----------
+   
     ontology : muon.MuData
         Ontology object.
     modality : str
@@ -787,6 +791,7 @@ def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optiona
 
     Parameters
     ----------
+    
     ontology : muon.MuData
         Ontology object.
     modality : str
@@ -812,6 +817,7 @@ def factor_weights_to_df(ontology: mu.MuData, transpose: bool = False, cell_type
 
     Parameters
     ----------
+    
     ontology : muon.MuData
         Ontology object.
     cell_types : str or sequence of str, optional
@@ -850,6 +856,7 @@ def modality_feature_loadings_to_df(
 
     Parameters
     ----------
+    
     ontology : muon.MuData
         Ontology object.
     modality : str
@@ -940,6 +947,7 @@ def top_features_for_factor(ontology: mu.MuData, factor: str, modality: str, n_p
 
     Parameters
     ----------
+    
     ontology
         Factor-centric ontology MuData.
     factor
