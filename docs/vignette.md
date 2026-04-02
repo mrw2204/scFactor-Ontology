@@ -1,5 +1,4 @@
-
-# Single Cell Factor Ontology (scFO) vignette
+# scFactor-Ontology vignette
 
 This vignette shows a typical end-to-end workflow for `scfo` using:
 
@@ -24,10 +23,12 @@ from scfo import (
     signature_enrichment,
     export_ontology_excel,
     load_ontology_excel,
+    factor_weights_to_df,
     modality_scores_to_df,
     modality_feature_loadings_to_df,
     top_features_for_factor,
     plot_factor_top_features,
+    plot_modality_feature_top_items,
 )
 ```
 
@@ -35,7 +36,7 @@ from scfo import (
 
 ### Factor loadings
 
-`factor_loadings` should be a **DataFrame with genes as rows and factors as columns**.
+`factor_loadings` should be a DataFrame with genes as rows and factors as columns.
 
 ```python
 factor_loadings.shape
@@ -52,7 +53,7 @@ Factor0|Mo_TAM
 
 ### Regulon loadings
 
-`regulon_loadings` should be a **DataFrame with genes as rows and regulons as columns**.
+`regulon_loadings` should be a DataFrame with genes as rows and regulons as columns.
 
 For lineage-specific regulons, use columns like:
 
@@ -63,13 +64,14 @@ IRF1(+)|Endothelial
 ```
 
 The package will:
-- compute enrichment only against the matching lineage-specific regulon
+
+- compute enrichment only against the matching lineage-specific regulons
 - expose the final regulon modality with shared variables like `CEBPB(+)`
-- store lineage-specific regulon definitions in `ontology.mod['regulons'].varm`
+- store lineage-specific regulon definitions in `ontology.mod["regulons"].varm`
 
 ### LIANA input
 
-Pass the **raw long-form LIANA table**, not precomputed LR signatures. It should contain at least:
+Pass the raw long-form LIANA table, not precomputed signature matrices. It should contain at least:
 
 - `source`
 - `target`
@@ -81,21 +83,24 @@ Pass the **raw long-form LIANA table**, not precomputed LR signatures. It should
 Example:
 
 ```python
-liana[['source', 'target', 'ligand_complex', 'receptor_complex', 'magnitude_rank', 'specificity_rank']].head()
+liana[
+    ["source", "target", "ligand_complex", "receptor_complex", "magnitude_rank", "specificity_rank"]
+].head()
 ```
 
-The package reproduces the original workflow used to construct LR signatures:
+The package reproduces the original LIANA workflow used to construct LR signatures:
+
 - `score = magnitude_rank * specificity_rank`
 - factor support is computed from normalized factor weights
 - interaction blocks are z-scored within each sender/receiver pair
-- filtered ligand/receptor signatures are built from retained interactions
+- filtered ligand and receptor signatures are built from retained interactions
 
 For the final ontology:
+
 - `liana_ligand` variables are shared context names like `rec by|Tumor`, `rec by|Mo_TAM`, ...
 - `liana_receptor` variables are shared context names like `sent by|Tumor`, `sent by|Mo_TAM`, ...
-- Internally, LIANA signatures are first constructed in the full pairwise form (for example `Tumor|rec by|Pericyte` and `Tumor|sent by|Pericyte`) so that each factor is enriched only against the matching lineage-specific LR signatures, mirroring the original analysis logic. In the final ontology object, these are collapsed to the shared 11-context views described above, while lineage-specific signature matrices are preserved in `varm`.
-- enrichment is computed only against the factor's own lineage-specific LR signatures
-- lineage-specific LR definitions are stored in `varm`
+
+Internally, LIANA signatures are first constructed in the original paired format so that each factor is enriched only against the matching lineage-specific row block. These lineage-specific signature matrices are preserved in `varm`.
 
 ## Build the ontology
 
@@ -111,22 +116,17 @@ ontology = make_ontology(
 This returns a factor-centric `MuData` object:
 
 - `ontology.obs` = factors
-- `ontology.obsm['weights']` = factor weight matrix
+- `ontology.obsm["weights"]` = factor weight matrix
 - `ontology.mod[...]` = annotation modalities
 
 Typical modalities:
 
 ```python
 list(ontology.mod.keys())
+# ['regulons', 'liana_ligand', 'liana_receptor']
 ```
 
-Expected output:
-
-```text
-['regulons', 'liana_ligand', 'liana_receptor']
-```
-
-## Inspect modalities
+## Inspect the ontology
 
 ### Factor metadata
 
@@ -134,59 +134,39 @@ Expected output:
 ontology.obs.head()
 ```
 
-### Regulon scores
+### Retrieve factor weights
 
 ```python
-reg_scores = modality_scores_to_df(ontology, 'regulons')
-reg_scores.head()
+weights_fxg = factor_weights_to_df(ontology)
+weights_gxf = factor_weights_to_df(ontology, transpose=True)
+weights_tumor = factor_weights_to_df(ontology, transpose=True, cell_types="Tumor")
 ```
 
-### LIANA ligand scores
+### Retrieve modality scores
 
 ```python
-lig_scores = modality_scores_to_df(ontology, 'liana_ligand')
-lig_scores.head()
-```
-
-This should now have shared context columns like:
-
-```text
-rec by|Tumor
-rec by|Mo_TAM
-rec by|Mg_TAM
-...
+reg_scores = modality_scores_to_df(ontology, "regulons")
+lig_scores = modality_scores_to_df(ontology, "liana_ligand", cell_types="Tumor")
 ```
 
 ### Retrieve feature-loading matrices
 
-For regulons, lineage-specific definitions are stored separately:
-
 ```python
-ontology.mod['regulons'].varm.keys()
+tumor_regulons = modality_feature_loadings_to_df(
+    ontology,
+    "regulons",
+    key="Tumor_regulons",
+)
 ```
 
-For example:
-
-```text
-Tumor_regulons
-Mo_TAM_regulons
-...
-```
-
-To recover one as a DataFrame:
+Similarly for LIANA:
 
 ```python
-tumor_regulons = modality_feature_loadings_to_df(ontology, 'regulons', key='Tumor_regulons')
-tumor_regulons.head()
-```
-
-Similarly for LIANA ligand signatures:
-
-```python
-ontology.mod['liana_ligand'].varm.keys()
-# e.g. Tumor_ligand_signatures, Mo_TAM_ligand_signatures, ...
-
-tumor_lig = modality_feature_loadings_to_df(ontology, 'liana_ligand', key='Tumor_ligand_signatures')
+tumor_lig = modality_feature_loadings_to_df(
+    ontology,
+    "liana_ligand",
+    key="Tumor_ligand_signatures",
+)
 ```
 
 ## Top features for a factor
@@ -194,8 +174,8 @@ tumor_lig = modality_feature_loadings_to_df(ontology, 'liana_ligand', key='Tumor
 ```python
 pos, neg = top_features_for_factor(
     ontology,
-    factor='Factor0|Tumor',
-    modality='regulons',
+    factor="Factor0|Tumor",
+    modality="regulons",
     n_pos=10,
     n_neg=10,
 )
@@ -206,8 +186,50 @@ Or plot them directly:
 ```python
 fig, ax = plot_factor_top_features(
     ontology,
-    factor='Factor0|Tumor',
-    modality='regulons',
+    factor="Factor0|Tumor",
+    modality="regulons",
+    n_pos=10,
+    n_neg=10,
+)
+```
+
+You can also plot factor weights directly:
+
+```python
+fig, ax = plot_factor_top_features(
+    ontology,
+    factor="Factor0|Tumor",
+    modality="weights",
+    n_pos=10,
+    n_neg=10,
+)
+```
+
+## Plot genes or factors for a modality feature
+
+Top genes contributing to a modality feature:
+
+```python
+fig, ax = plot_modality_feature_top_items(
+    ontology,
+    modality="regulons",
+    feature="CEBPB(+)",
+    cell_type="Tumor",
+    what="genes",
+    n_pos=10,
+    n_neg=10,
+)
+```
+
+Top factors enriched in a modality feature:
+
+```python
+fig, ax = plot_modality_feature_top_items(
+    ontology,
+    modality="regulons",
+    feature="CEBPB(+)",
+    cell_type="Tumor",
+    what="factors",
     n_pos=10,
     n_neg=10,
 )
@@ -223,39 +245,29 @@ project_ontology(
     ontology=ontology,
     layer=None,
     annotation_key=None,
-    score_key_added='ontology_scores',
-    pval_key_added='ontology_pvals',
-    method='permutation',
+    score_key_added="ontology_scores",
+    pval_key_added="ontology_pvals",
+    method="permutation",
     n_iter=1000,
     inplace=True,
 )
 ```
 
-Projected scores are stored in:
-
-```python
-adata_external.obsm['ontology_scores']
-```
-
 ### Cell-type-aware projection
-
-If the external dataset has lineage labels that match the ontology classifications:
 
 ```python
 project_ontology(
     adata=adata_external,
     ontology=ontology,
-    layer='log1p' if 'log1p' in adata_external.layers else None,
-    annotation_key='final_annotation_fine',
-    score_key_added='ontology_scores',
-    pval_key_added='ontology_pvals',
-    method='permutation',
+    layer="log1p" if "log1p" in adata_external.layers else None,
+    annotation_key="final_annotation_fine",
+    score_key_added="ontology_scores",
+    pval_key_added="ontology_pvals",
+    method="permutation",
     n_iter=1000,
     inplace=True,
 )
 ```
-
-This is usually preferred when factors are lineage-specific.
 
 ### Fast dot-product projection
 
@@ -263,8 +275,8 @@ This is usually preferred when factors are lineage-specific.
 project_ontology(
     adata=adata_external,
     ontology=ontology,
-    annotation_key='final_annotation_fine',
-    method='dot',
+    annotation_key="final_annotation_fine",
+    method="dot",
     inplace=True,
 )
 ```
@@ -276,9 +288,9 @@ project_ontology(
 ```python
 test_adata, de_results = diff_exp_ontology(
     adata=adata_external,
-    ontology_keys='ontology_scores',
-    groupby='Status',
-    method='wilcoxon',
+    ontology_keys="ontology_scores",
+    groupby="Status",
+    method="wilcoxon",
     pseudo_bulk=False,
 )
 ```
@@ -288,32 +300,55 @@ test_adata, de_results = diff_exp_ontology(
 ```python
 test_adata_pb, de_results_pb = diff_exp_ontology(
     adata=adata_external,
-    ontology_keys='ontology_scores',
-    groupby='Status',
-    method='wilcoxon',
+    ontology_keys="ontology_scores",
+    groupby="Status",
+    method="wilcoxon",
     pseudo_bulk=True,
-    pseudo_bulk_by=['Patient_Study'],
-    summary_metric='mean',
+    pseudo_bulk_by=["Patient_Study"],
+    summary_metric="mean",
 )
 ```
 
-## Signature enrichment against ontology factors or modalities
+## Signature enrichment
+
+### Unweighted curated gene set
 
 ```python
 sig_results = signature_enrichment(
-    signature=['CEBPB', 'LGALS3', 'JUNB', 'ANXA1', 'VEGFA'],
+    signature=["CEBPB", "LGALS3", "JUNB"],
     ontology=ontology,
-    modalities=['regulons', 'liana_ligand', 'liana_receptor'],
-    pval_thresh=0.05,
+    search_in=["weights", "regulons", "liana_ligand"],
+    cell_types=["Tumor", "Mo_TAM"],
 )
 ```
 
-Examples:
+### Weighted genome-wide signature
 
 ```python
-sig_results['weights'].head()
-sig_results['regulons'].head()
-sig_results['liana_ligand'].head()
+weighted_sig = pd.Series(
+    [2.1, 1.4, -0.8, 0.6],
+    index=["CEBPB", "LGALS3", "MKI67", "ANXA1"],
+    name="external_signature",
+)
+
+sig_results = signature_enrichment(
+    signature=weighted_sig,
+    ontology=ontology,
+    search_in=["weights", "regulons", "liana_receptor"],
+    cell_types="Tumor",
+)
+```
+
+Each query target returns:
+
+- `results`: ranked enrichment table
+- `overlap`: overlap summary between the query and the queried ontology target
+
+Example:
+
+```python
+sig_results["weights"]["results"].head()
+sig_results["weights"]["overlap"]
 ```
 
 ## Export to Excel
@@ -321,8 +356,8 @@ sig_results['liana_ligand'].head()
 ```python
 paths = export_ontology_excel(
     ontology=ontology,
-    outdir='.',
-    prefix='gbm_ontology',
+    outdir=".",
+    prefix="gbm_ontology",
 )
 print(paths)
 ```
@@ -336,22 +371,14 @@ This writes:
 
 ```python
 ontology2 = load_ontology_excel(
-    scores_xlsx='gbm_ontology_scores.xlsx',
-    features_xlsx='gbm_ontology_features.xlsx',
+    scores_xlsx="gbm_ontology_scores.xlsx",
+    features_xlsx="gbm_ontology_features.xlsx",
 )
 ```
 
 ## End-to-end example
 
 ```python
-from scfo import (
-    make_ontology,
-    project_ontology,
-    diff_exp_ontology,
-    signature_enrichment,
-    export_ontology_excel,
-)
-
 ontology = make_ontology(
     factor_loadings=factor_loadings.fillna(0),
     regulon_loadings=regulon_loadings.fillna(0),
@@ -362,127 +389,36 @@ ontology = make_ontology(
 project_ontology(
     adata=adata_external,
     ontology=ontology,
-    annotation_key='final_annotation_fine',
-    score_key_added='ontology_scores',
-    pval_key_added='ontology_pvals',
-    method='permutation',
+    annotation_key="final_annotation_fine",
+    score_key_added="ontology_scores",
+    pval_key_added="ontology_pvals",
+    method="permutation",
     n_iter=1000,
     inplace=True,
 )
 
 _, de_results = diff_exp_ontology(
     adata=adata_external,
-    ontology_keys='ontology_scores',
-    groupby='Status',
-    method='wilcoxon',
+    ontology_keys="ontology_scores",
+    groupby="Status",
+    method="wilcoxon",
     pseudo_bulk=True,
-    pseudo_bulk_by=['Patient_Study'],
-    summary_metric='mean',
+    pseudo_bulk_by=["Patient_Study"],
+    summary_metric="mean",
 )
 
 sig_results = signature_enrichment(
-    signature=['CEBPB', 'LGALS3', 'JUNB', 'ANXA1', 'VEGFA'],
-    ontology=ontology,
-    modalities=['regulons', 'liana_ligand', 'liana_receptor'],
-    pval_thresh=0.05,
-)
-
-paths = export_ontology_excel(ontology, outdir='.', prefix='gbm_ontology')
-```
-
-
-## Weighted and unweighted signatures
-
-`signature_enrichment()` accepts either:
-
-- an unweighted gene list, e.g. `['CEBPB', 'LGALS3']`
-- a weighted signature as a `pd.Series` or one-column `pd.DataFrame`, with gene names as the index and weights as the values
-
-
-
-You can query the global factor weights and any modality in the same call by using `search_in`, for example `search_in=["weights", "regulons", "liana_ligand"]`. For factor-weight results, `cell_types` can be used to restrict the search to one or a few ontology lineages.
-
-## LIANA note
-
-The package constructs intermediate LIANA signature matrices using the original paired formulation:
-
-- ligand-side rows: `sender_cell_type|ligand_gene`, columns: `rec by|receiver_cell_type`
-- receptor-side rows: `receiver_cell_type|receptor_gene`, columns: `sent by|sender_cell_type`
-
-During ontology assembly, each factor is enriched only against the matching lineage-specific row block, so the final `liana_ligand` and `liana_receptor` modalities expose the shared 11 paired-context columns rather than all 121 sender/receiver combinations.
-
-
-## Recent API notes
-
-### `signature_enrichment()`
-
-`signature_enrichment()` now uses **only** the `search_in` argument to choose ontology targets. It accepts:
-
-- an unordered gene list, which is scored with **GSEA**
-- a weighted `pandas.Series` or one-column `pandas.DataFrame`, which is scored with the **permutation test**
-
-It returns, for each queried target, a dictionary with:
-
-- `results`: ranked enrichment table
-- `overlap`: summary of overlap between the query genes and the queried ontology target
-
-Example:
-
-```python
-res = signature_enrichment(
     signature=["CEBPB", "LGALS3", "JUNB"],
     ontology=ontology,
     search_in=["weights", "regulons", "liana_ligand"],
     cell_types=["Tumor", "Mo_TAM"],
 )
 
-res["weights"]["results"].head()
-res["weights"]["overlap"]
-```
-
-### DataFrame helpers with `cell_types`
-
-The following helpers now accept `cell_types=` to return only ontology subsets of interest:
-
-- `factor_weights_to_df()`
-- `modality_scores_to_df()`
-- `modality_pvals_to_df()`
-- `modality_feature_loadings_to_df()`
-- `get_factor_scores()`
-
-Examples:
-
-```python
-weights_tumor = factor_weights_to_df(ontology, cell_types="Tumor", transpose=True)
-reg_scores_tumor = modality_scores_to_df(ontology, "regulons", cell_types="Tumor")
-reg_loadings_tumor = modality_feature_loadings_to_df(ontology, "regulons", cell_types="Tumor")
-```
-
-
-### Plot genes or factors for a modality feature
-
-```python
-from scfo import plot_modality_feature_top_items
-
-# top genes contributing to a regulon in Tumor
-fig, ax = plot_modality_feature_top_items(
-    ontology,
-    modality="regulons",
-    feature="CEBPB(+)",
-    cell_type="Tumor",
-    what="genes",
-    n_pos=10,
-    n_neg=10,
-)
-
-# top Tumor factors enriched for that regulon
-fig, ax = plot_modality_feature_top_items(
-    ontology,
-    modality="regulons",
-    feature="CEBPB(+)",
-    cell_type="Tumor",
-    what="factors",
-    n_pos=10,
-    n_neg=10,
+paths = export_ontology_excel(
+    ontology=ontology,
+    outdir=".",
+    prefix="gbm_ontology",
 )
 ```
+
+
