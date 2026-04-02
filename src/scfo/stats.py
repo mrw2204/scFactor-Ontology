@@ -45,6 +45,37 @@ def diff_exp_ontology(
     key_added: str = "rank_genes_groups",
     pval_thresh: Optional[float] = None,
 ) -> Tuple[ad.AnnData, pd.DataFrame]:
+    """Test projected ontology scores between categories in ``adata.obs``.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        AnnData object containing projected ontology scores.
+    ontology_keys : str or sequence of str
+        Keys in ``adata.obsm`` (preferred) or ``adata.obs`` containing ontology-derived
+        score matrices or columns.
+    groupby : str
+        Column in ``adata.obs`` defining the groups to compare.
+    method : str, default="wilcoxon"
+        Method passed to :func:`scanpy.tl.rank_genes_groups`.
+    pseudo_bulk : bool, default=False
+        Whether to aggregate scores before testing.
+    pseudo_bulk_by : str or sequence of str, optional
+        Columns defining pseudobulk units. Required if ``pseudo_bulk=True``.
+    summary_metric : {"mean", "median", "sum"}, default="mean"
+        Aggregation statistic used when pseudobulking.
+    key_added : str, default="rank_genes_groups"
+        Key under which Scanpy stores test results.
+    pval_thresh : float, optional
+        If provided, filter the returned result table to adjusted p-values below this
+        threshold.
+
+    Returns
+    -------
+    tuple
+        ``(test_adata, results_df)`` where ``test_adata`` is the score-space AnnData used
+        for testing and ``results_df`` is the long-form result table.
+    """
     if groupby not in adata.obs.columns:
         raise KeyError(f"groupby '{groupby}' not found in adata.obs.")
     score_df = collect_score_matrices(adata, ontology_keys)
