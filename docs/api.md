@@ -98,7 +98,7 @@ This page documents the public API of `scfo`.
 
 ---
 
-## Core containers
+## Core container
 
 ### `MatrixPair`
 
