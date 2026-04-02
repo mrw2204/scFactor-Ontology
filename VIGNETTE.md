@@ -409,7 +409,7 @@ The package constructs intermediate LIANA signature matrices using the original 
 - ligand-side rows: `sender_cell_type|ligand_gene`, columns: `rec by|receiver_cell_type`
 - receptor-side rows: `receiver_cell_type|receptor_gene`, columns: `sent by|sender_cell_type`
 
-During ontology assembly, each factor is enriched only against the matching lineage-specific row block, so the final `liana_ligand` and `liana_receptor` modalities expose the shared 11 paired-context columns rather than all 121 sender/receiver combinations.
+During ontology assembly, each factor is enriched only against the matching lineage-specific row block, so the final `liana_ligand` and `liana_receptor` modalities expose the shared paired-context columns rather than all sender/receiver combinations.
 
 
 ## Recent API notes
