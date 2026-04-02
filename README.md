@@ -1,5 +1,5 @@
 
-# ontology-tools
+# scfo
 
 Portable utilities for building, querying, projecting, and exporting **factor-centric ontology resources** from gene-by-factor loading matrices.
 
@@ -39,7 +39,7 @@ pip install -e /path/to/ontology_tools_pkg_release
 ## Quick start
 
 ```python
-from ontology_tools import make_ontology, project_ontology
+from scfo import make_ontology, project_ontology
 
 ontology = make_ontology(
     factor_loadings=factor_loadings,
@@ -74,7 +74,7 @@ You can query the global factor weights and any modality in the same call by usi
 ## Helper: retrieve factor weights as a DataFrame
 
 ```python
-from ontology_tools import factor_weights_to_df
+from scfo import factor_weights_to_df
 
 # factor x gene
 weights_df = factor_weights_to_df(ontology)
@@ -134,7 +134,7 @@ reg_loadings_tumor = modality_feature_loadings_to_df(ontology, "regulons", cell_
 ### Plot genes or factors for a modality feature
 
 ```python
-from ontology_tools import plot_modality_feature_top_items
+from scfo import plot_modality_feature_top_items
 
 # top genes contributing to a regulon in Tumor
 fig, ax = plot_modality_feature_top_items(
