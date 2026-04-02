@@ -1,6 +1,6 @@
 # API reference
 
-This page documents the public Python API for `scfo` / `ontology_tools`.
+This page documents the public Python API for `scfo`.
 
 ## Ontology construction
 
