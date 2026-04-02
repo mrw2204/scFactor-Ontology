@@ -31,6 +31,38 @@ def project_ontology(
     seed: int = 0,
     inplace: bool = True,
 ) -> Optional[Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:
+    """Project ontology factor scores onto an external ``AnnData`` object.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        External dataset to score.
+    ontology : muon.MuData
+        Ontology object created with :func:`make_ontology`.
+    layer : str, optional
+        Layer to use for projection. If ``None``, ``adata.X`` is used.
+    annotation_key : str, optional
+        Column in ``adata.obs`` containing cell type labels. If provided, each cell is
+        projected only against factors from the corresponding ontology lineage.
+    score_key_added : str, default="ontology_scores"
+        Key under which projected scores are stored in ``adata.obsm``.
+    pval_key_added : str, default="ontology_pvals"
+        Key under which permutation-derived p-values are stored in ``adata.obsm``.
+    method : {"permutation", "dot"}, default="permutation"
+        Scoring method. ``"permutation"`` returns z-scores and p-values, whereas
+        ``"dot"`` performs a direct dot-product projection only.
+    n_iter : int, default=1000
+        Number of permutations for permutation-based projection.
+    seed : int, default=0
+        Random seed for permutation-based projection.
+    inplace : bool, default=True
+        If ``True``, store scores in ``adata.obsm``. Otherwise return them.
+
+    Returns
+    -------
+    None or tuple of pandas.DataFrame
+        If ``inplace=True``, returns ``None``. Otherwise returns ``(scores, pvals)``.
+    """
     if "weights" not in ontology.obsm:
         raise KeyError("ontology.obsm['weights'] not found.")
     if "gene_names" not in ontology.uns:
