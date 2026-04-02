@@ -1,5 +1,5 @@
 
-# scfo
+# Single Cell Factor-Ontology (scFO)
 
 Portable utilities for building, querying, projecting, and exporting **factor-centric ontology resources** from gene-by-factor loading matrices.
 
