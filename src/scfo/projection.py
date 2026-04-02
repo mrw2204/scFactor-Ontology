@@ -219,29 +219,34 @@ def signature_enrichment(
     seed: int = 0,
     cell_types: Optional[Union[str, Sequence[str]]] = None,
 ) -> Dict[str, Dict[str, object]]:
-    """Query ontology factor weights and/or modality loadings with a signature.
+    """Query ontology weights and modality loadings with a gene list or weighted vector.
 
     Parameters
     ----------
-    signature
-        Either an unordered gene list (GSEA) or a weighted pandas Series /
-        one-column DataFrame (permutation test).
-    search_in
-        Sequence of ontology targets to query. Use ``['weights']`` for global
-        factor weights and modality names such as ``'regulons'`` or
-        ``'liana_ligand'`` for modality loadings. If None, query weights and all
-        ontology modalities.
-    cell_types
-        Optional ontology classifications to restrict the search to. This
-        filters factors for ``weights`` and selects matching lineage-specific
-        loading matrices for modalities.
+    signature : sequence of str, pandas.Series, or one-column pandas.DataFrame
+        Query signature. An unordered gene list is treated as a gene set and scored with
+        preranked GSEA. A weighted series or one-column DataFrame is treated as a ranked
+        vector and scored with the permutation framework.
+    ontology : muon.MuData
+        Ontology object.
+    search_in : sequence of str
+        Targets to query. May include ``"weights"`` and any ontology modality name.
+    cell_types : str or sequence of str, optional
+        Restrict the query to selected ontology lineages. For ``"weights"``, only factors
+        from the selected lineages are searched. For modalities, only lineage-matched
+        loading matrices are searched when available.
+    pval_thresh : float, optional
+        Optional p-value threshold applied to each result table.
+    n_iter : int, default=1000
+        Number of permutations or GSEA permutations.
+    seed : int, default=0
+        Random seed.
 
     Returns
     -------
     dict
-        Mapping from query target to a dictionary with keys:
-          - ``results``: ranked enrichment DataFrame
-          - ``overlap``: overlap summary dict
+        Mapping from each queried target to a dictionary with two entries:
+        ``"results"`` (ranked enrichment table) and ``"overlap"`` (gene-overlap summary).
     """
     results: Dict[str, Dict[str, object]] = {}
     targets = ["weights"] + list(ontology.mod.keys()) if search_in is None else list(search_in)
