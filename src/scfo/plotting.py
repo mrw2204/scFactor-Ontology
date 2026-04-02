@@ -20,10 +20,31 @@ def plot_factor_top_features(
     figsize: Tuple[float, float] = (7, 6),
     path: Optional[str] = None,
 ):
-    """
-    Horizontal bar plot of the top positive and negative features for a factor
-    within a given ontology modality, or from the global factor weight matrix
-    when ``modality="weights"``.
+    """Plot the top positive and negative features for a factor.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    factor : str
+        Factor to plot.
+    modality : str
+        Modality to query. Use ``"weights"`` to plot global factor weights.
+    n_pos : int, default=10
+        Number of top positive features to display.
+    n_neg : int, default=10
+        Number of top negative features to display.
+    alpha : float, optional
+        Optional p-value filter for modality features.
+    figsize : tuple, default=(7, 6)
+        Figure size.
+    path : str, optional
+        If provided, save the figure to this path.
+
+    Returns
+    -------
+    tuple
+        ``(fig, ax)`` matplotlib objects.
     """
     pos, neg = top_features_for_factor(
         ontology, factor, modality, n_pos=n_pos, n_neg=n_neg, alpha=alpha
@@ -101,29 +122,36 @@ def plot_modality_feature_top_items(
     figsize: Tuple[float, float] = (7, 6),
     path: Optional[str] = None,
 ):
-    """
-    Plot top genes or top factors for a given modality feature and cell type.
+    """Plot the top genes or top factors for a modality feature.
 
     Parameters
     ----------
-    ontology
-        Factor-centric ontology MuData.
-    modality
-        Modality name, e.g. ``'regulons'`` or ``'liana_ligand'``.
-    feature
-        Feature/context/regulon name within the modality.
-    cell_type
-        Optional ontology lineage to restrict both the feature loadings and factor
-        score view. Recommended for lineage-specific modalities.
-    what
-        ``'genes'`` to plot the top positive/negative genes making up the feature
-        loadings, or ``'factors'`` to plot the top positive/negative factors in
-        which the feature is enriched.
-    n_pos, n_neg
-        Number of positive / negative items to show.
-    alpha
-        Optional p-value threshold. Only applies when ``what='factors'`` and the
-        modality stores p-values.
+    ontology : muon.MuData
+        Ontology object.
+    modality : str
+        Modality containing the feature of interest.
+    feature : str
+        Feature name within the modality.
+    cell_type : str, optional
+        Lineage to use when selecting lineage-specific loading matrices.
+    what : {"genes", "factors"}, default="genes"
+        Whether to plot genes contributing to the feature or factors enriched in the
+        feature.
+    n_pos : int, default=10
+        Number of top positive items.
+    n_neg : int, default=10
+        Number of top negative items.
+    alpha : float, optional
+        Optional p-value filter when ``what='factors'``.
+    figsize : tuple, default=(7, 6)
+        Figure size.
+    path : str, optional
+        If provided, save the figure to this path.
+
+    Returns
+    -------
+    tuple
+        ``(fig, ax)`` matplotlib objects.
     """
     if what not in {"genes", "factors"}:
         raise ValueError("what must be 'genes' or 'factors'.")
