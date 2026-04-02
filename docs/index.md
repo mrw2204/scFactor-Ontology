@@ -1,10 +1,8 @@
 
-# ontology-tools
+# Single Cell Factor Ontology (scFO)
 
 ```{toctree}
-:maxdepth: 2
-
-vignette
+Tools for user-friendly viewing of scRNAseq-derived factorization results and prior-knowledge guided meta-annotation (e.g. inferred master regulators, cell-cell communication, gene ontology, etc). 
 ```
 
 
@@ -68,7 +66,7 @@ reg_loadings_tumor = modality_feature_loadings_to_df(ontology, "regulons", cell_
 ### Plot genes or factors for a modality feature
 
 ```python
-from ontology_tools import plot_modality_feature_top_items
+from scfo import plot_modality_feature_top_items
 
 # top genes contributing to a regulon in Tumor
 fig, ax = plot_modality_feature_top_items(
