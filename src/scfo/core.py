@@ -456,6 +456,7 @@ def lr_enrichment(
     direction: str = "ligand",
     n_iter: int = 1000,
     seed: int = 0,
+    show_progress: bool = True,
 ) -> MatrixPair:
     """
     Cell-type-aware LR enrichment using row-paired intermediate signature matrices.
@@ -503,7 +504,7 @@ def lr_enrichment(
             lr_ct,
             n_iter=n_iter,
             seed=seed,
-            show_progress=False,
+            show_progress=show_progress,
         )
         score_ct = pair.score.reindex(columns=shared_cols)
         pval_ct = pair.pval.reindex(columns=shared_cols)
@@ -527,6 +528,8 @@ def regulon_enrichment(
     cell_type_regulons: bool = True,
     n_iter: int = 1000,
     seed: int = 0,
+    show_progress: bool = True,
+    progress_message: str = 'Permuting...',
 ) -> MatrixPair:
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings")
     rl = ensure_no_nan(require_dataframe(regulon_loadings, "regulon_loadings"), "regulon_loadings")
@@ -543,7 +546,7 @@ def regulon_enrichment(
         if len(reg_cols) == 0:
             continue
         reg_ct = rl.loc[:, reg_cols].copy()
-        pair = calc_enrichment(factor_ct.T, reg_ct, n_iter=n_iter, seed=seed, show_progress=False)
+        pair = calc_enrichment(factor_ct.T, reg_ct, n_iter=n_iter, seed=seed, show_progress=show_progress, progress_message=progress_message)
         stripped_cols = [str(c).rsplit(f"{cell_type_separator}{ct}", 1)[0] if str(c).endswith(f"{cell_type_separator}{ct}") else str(c) for c in pair.score.columns]
         pair.score.columns = stripped_cols
         pair.pval.columns = stripped_cols
@@ -578,6 +581,7 @@ def make_ontology(
     feature_loading_key_map: Optional[Mapping[str, str]] = None,
     plot_liana_scores: bool = True,
     liana_plot_size: float = 0.1,
+    show_progress: bool = True,
 ) -> mu.MuData:
     """Build a factor-centric ontology object from factor loadings and optional annotation modalities.
 
@@ -623,6 +627,8 @@ def make_ontology(
         Whether to display the LIANA filtering scatterplot during ontology construction.
     liana_plot_size : float, default=2.0
         Marker size for the LIANA filtering scatterplot.
+    show_progress : bool, default=True
+        Whether to show progress bars for modality enrichment.
 
     Returns
     -------
@@ -662,7 +668,7 @@ def make_ontology(
 
     if sender_loadings is not None:
         sender_loadings = ensure_no_nan(require_dataframe(sender_loadings, "sender_loadings"), "sender_loadings")
-        pair = lr_enrichment(fl, sender_loadings, cell_types=cell_types, cell_type_separator=cell_type_separator, direction="ligand", n_iter=n_iter)
+        pair = lr_enrichment(fl, sender_loadings, cell_types=cell_types, cell_type_separator=cell_type_separator, direction="ligand", n_iter=n_iter, show_progress=show_progress,)
         lig_adata = build_modality_adata(pair.score, pair.pval, feature_loadings=None, factor_metadata=factor_meta)
         lig_adata.uns["gene_names"] = list(pd.Index(sender_loadings.index.astype(str).str.split(cell_type_separator, n=1).str[1]).unique())
         if liana_filtered is not None:
@@ -684,7 +690,7 @@ def make_ontology(
 
     if receiver_loadings is not None:
         receiver_loadings = ensure_no_nan(require_dataframe(receiver_loadings, "receiver_loadings"), "receiver_loadings")
-        pair = lr_enrichment(fl, receiver_loadings, cell_types=cell_types, cell_type_separator=cell_type_separator, direction="receptor", n_iter=n_iter)
+        pair = lr_enrichment(fl, receiver_loadings, cell_types=cell_types, cell_type_separator=cell_type_separator, direction="receptor", n_iter=n_iter, show_progress=show_progress,)
         rec_adata = build_modality_adata(pair.score, pair.pval, feature_loadings=None, factor_metadata=factor_meta)
         rec_adata.uns["gene_names"] = list(pd.Index(receiver_loadings.index.astype(str).str.split(cell_type_separator, n=1).str[1]).unique())
         if liana_filtered is not None:
@@ -713,6 +719,8 @@ def make_ontology(
             cell_type_separator=cell_type_separator,
             cell_type_regulons=cell_type_regulons,
             n_iter=n_iter,
+            show_progress=show_progress,
+            progress_message='Permuting '+ct+'...',
         )
         reg_adata = build_modality_adata(pair.score, pair.pval, feature_loadings=None, factor_metadata=factor_meta)
         if cell_type_regulons:
