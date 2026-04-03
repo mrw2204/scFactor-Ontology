@@ -17,9 +17,10 @@ With `scfo`, you can:
 - **inspect and visualize** factor weights, modality enrichments, and feature loadings
 - **project ontology factors** onto external `AnnData` objects
 - **test ontology scores** between biological groups at single-cell or pseudobulk level
-- **query the ontology** with either:
+- **query the ontology** with:
   - a curated unordered gene set
   - a weighted genome-wide signature
+  - visualizaiton of modality enrichment
 - **export and reload** ontology objects through standardized Excel workbooks
 
 ## Installation
@@ -46,6 +47,8 @@ from scfo import make_ontology, project_ontology
 ontology = make_ontology(
     factor_loadings=factor_loadings.fillna(0),
     regulon_loadings=regulon_loadings.fillna(0),
+    hallmark_lib=hallmark_lib_dict,
+    gene_sets=gene_sets_dict,
     liana=liana,
     n_iter=1000,
 )
@@ -76,6 +79,7 @@ project_ontology(
 
 - `factor_loadings`: **genes x factors**
 - `regulon_loadings`: **genes x regulons**
+- `hallmark_lib_dict` and `gene_sets_dict`: **dictionaries of gene sets (unranked lists)**
 - `liana`: raw long-form LIANA output
 - external projections: `AnnData` with genes in `adata.var_names`
 
