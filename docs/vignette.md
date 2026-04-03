@@ -36,10 +36,10 @@ from scfo import (
 
 ### Factor loadings
 
-`factor_loadings` should be a DataFrame with genes as rows and factors as columns. Factors can be bi-directional (e.g. MOFA) or uni-directional (e.g. scHPF).
-Enrichment-based meta-annotation of these factors will be calculated based on user-chosen modalities (e.g. PySCENIC regulons, LIANA ligand-receptor scores, Hallmark/gene sets, etc.). 
-Modalities can be arbitrary lists/vectors of genes representing any source of prior knowledge.
-The package automatically uses preranked GSEA for enrichment of gene sets, and a permutation-based dot product algorithm for enrichment of vectors in factors. Empirical p-values are also returned.
+- `factor_loadings` should be a DataFrame with genes as rows and factors as columns. Factors can be bi-directional (e.g. MOFA) or uni-directional (e.g. scHPF).
+- Enrichment-based meta-annotation of these factors will be calculated based on user-chosen modalities (e.g. PySCENIC regulons, LIANA ligand-receptor scores, Hallmark/gene sets, etc.). 
+- Modalities can be arbitrary lists/vectors of genes representing any source of prior knowledge.
+- The package automatically uses preranked GSEA for enrichment of gene sets, and a permutation-based dot product algorithm for enrichment of vectors in factors. Empirical p-values are also returned.
 
 ```python
 factor_loadings.shape
@@ -56,9 +56,9 @@ Factor0|Mo_TAM
 
 ### Preranked gene set enrichment
 
-Performs gene-ontology (GO)-style analysis.
-`hallmark_lib` should be a dictionary with the desired species/release for MSigDB Hallmark gene sets.
-`gene_sets` should be a dictionary of additional gene sets (lists) of interest.
+- Performs gene-ontology (GO)-style analysis.
+- `hallmark_lib` should be a dictionary with the desired species/release for MSigDB Hallmark gene sets.
+- `gene_sets` should be a dictionary of additional gene sets (lists) of interest.
 
 For gene sets, use a dictionary like:
 
