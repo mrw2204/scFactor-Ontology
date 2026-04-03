@@ -15,6 +15,7 @@ This page documents the public Python API for `scfo`.
 ::: scfo.project_ontology
 ::: scfo.diff_exp_ontology
 ::: scfo.signature_enrichment
+::: scfo.collapse_projected_ontology_scores
 
 ## Data access helpers
 
