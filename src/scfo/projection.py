@@ -29,7 +29,6 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-
 def project_ontology(
     adata: ad.AnnData,
     ontology: mu.MuData,
@@ -43,14 +42,16 @@ def project_ontology(
     pval_key_added: str = "scfo_pvals",
     score_columns_uns_key: Optional[str] = None,
     store_sparse_scores: bool = True,
-    show_progress = True,
+    show_progress=True,
 ) -> Optional[Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:
     """
     Project an ontology onto an AnnData object.
 
     If `annotation_key` is provided, cells are only projected onto ontology factors
     whose ontology Classification matches the cell annotation. If the AnnData and
-    ontology annotations only partially overlap, only the overlapping subset is used.
+    ontology annotations only partially overlap, only the overlapping subset is used
+    for computation. If `inplace=True`, the result is expanded back to full AnnData
+    dimensions before storage in `.obsm`.
 
     Parameters
     ----------
@@ -75,6 +76,8 @@ def project_ontology(
     inplace
         If True, write outputs to `adata.obsm` and return None.
         If False, return `(score_df, pval_df_or_none)`.
+        In the annotated case, returned DataFrames are restricted to overlapping
+        cells and overlapping ontology factors.
     score_key_added
         Key for projected scores in `adata.obsm`.
     pval_key_added
@@ -87,6 +90,8 @@ def project_ontology(
         If True and `inplace=True`, store projected scores in `adata.obsm` as a CSR
         sparse matrix after replacing NaN with 0. Column names are stored in `adata.uns`.
         If False, store the score DataFrame directly in `adata.obsm`.
+    show_progress
+        Whether to show progress bars for permutation-based projection.
 
     Returns
     -------
@@ -114,26 +119,29 @@ def project_ontology(
     if factor_meta["Classification"].isna().any():
         factor_meta["Classification"] = factor_meta["Classification"].fillna("Unknown")
 
-    # Full-size outputs so they can always be stored in .obsm
-    score_df = pd.DataFrame(
-        np.nan,
-        index=adata.obs_names,
-        columns=weights.index,
-        dtype=float,
-    )
-    pval_df = None
-    if method == "permutation":
-        pval_df = pd.DataFrame(
+    # ------------------------------------------------------------------
+    # Case 1: global projection (no annotation matching)
+    # ------------------------------------------------------------------
+    if annotation_key is None:
+        common = X_df.columns.intersection(weights.columns)
+        if len(common) == 0:
+            raise ValueError("No overlapping genes between adata and ontology weights.")
+
+        score_df = pd.DataFrame(
             np.nan,
             index=adata.obs_names,
             columns=weights.index,
             dtype=float,
         )
 
-    if annotation_key is None:
-        common = X_df.columns.intersection(weights.columns)
-        if len(common) == 0:
-            raise ValueError("No overlapping genes between adata and ontology weights.")
+        pval_df = None
+        if method == "permutation":
+            pval_df = pd.DataFrame(
+                np.nan,
+                index=adata.obs_names,
+                columns=weights.index,
+                dtype=float,
+            )
 
         if method == "dot":
             proj = X_df.loc[:, common] @ weights.loc[:, common].T
@@ -145,21 +153,28 @@ def project_ontology(
                 n_iter=n_iter,
                 seed=seed,
                 show_progress=show_progress,
-                progress_message='Permuting globally...',
+                progress_message="Permuting globally...",
             )
             score_df.loc[pair.score.index, pair.score.columns] = pair.score
             assert pval_df is not None
             pval_df.loc[pair.pval.index, pair.pval.columns] = pair.pval
 
+        pval_out = None if method == "dot" else pval_df
+
+    # ------------------------------------------------------------------
+    # Case 2: annotation-aware projection with partial overlap support
+    # Compute on overlap subset first, then expand only if inplace=True
+    # ------------------------------------------------------------------
     else:
         if annotation_key not in adata.obs.columns:
             raise KeyError(f"annotation_key '{annotation_key}' not found in adata.obs.")
 
-        adata_classes = pd.Index(
-            adata.obs[annotation_key].dropna().astype(str).unique()
-        )
+        ann = adata.obs[annotation_key]
+        ann_nonnull = ann.dropna().astype(str)
+
+        adata_classes = pd.Index(ann_nonnull.unique())
         ontology_classes = pd.Index(
-            ontology.obs["Classification"].dropna().astype(str).unique()
+            factor_meta["Classification"].dropna().astype(str).unique()
         )
         cl_common = adata_classes.intersection(ontology_classes)
 
@@ -169,19 +184,43 @@ def project_ontology(
                 f"adata.obs['{annotation_key}'] and ontology.obs['Classification']."
             )
 
-        annotation_series = adata.obs[annotation_key].astype(str)
-        factor_classes = factor_meta["Classification"].astype(str)
+        # Restrict computation to overlapping cells and overlapping factors only
+        cell_mask = ann.notna() & ann.astype(str).isin(cl_common)
+        cell_idx_use = adata.obs_names[cell_mask]
+
+        factor_mask = factor_meta["Classification"].astype(str).isin(cl_common)
+        factor_idx_use = factor_meta.index[factor_mask]
+
+        score_sub = pd.DataFrame(
+            np.nan,
+            index=cell_idx_use,
+            columns=factor_idx_use,
+            dtype=float,
+        )
+
+        pval_sub = None
+        if method == "permutation":
+            pval_sub = pd.DataFrame(
+                np.nan,
+                index=cell_idx_use,
+                columns=factor_idx_use,
+                dtype=float,
+            )
+
+        X_sub = X_df.loc[cell_idx_use]
+        ann_sub = ann.loc[cell_idx_use].astype(str)
+        factor_classes_sub = factor_meta.loc[factor_idx_use, "Classification"].astype(str)
 
         for ct in cl_common:
-            cell_idx = annotation_series.index[annotation_series == ct]
+            cell_idx = ann_sub.index[ann_sub == ct]
             if len(cell_idx) == 0:
                 continue
 
-            factor_idx = factor_meta.index[factor_classes == ct]
+            factor_idx = factor_classes_sub.index[factor_classes_sub == ct]
             if len(factor_idx) == 0:
                 continue
 
-            X_ct = X_df.loc[cell_idx]
+            X_ct = X_sub.loc[cell_idx]
             W_ct = weights.loc[factor_idx]
             common = X_ct.columns.intersection(W_ct.columns)
             if len(common) == 0:
@@ -189,8 +228,7 @@ def project_ontology(
 
             if method == "dot":
                 proj = X_ct.loc[:, common] @ W_ct.loc[:, common].T
-                score_df.loc[proj.index, proj.columns] = proj
-
+                score_sub.loc[proj.index, proj.columns] = proj
             else:
                 pair = calc_enrichment(
                     X_ct.loc[:, common],
@@ -198,14 +236,41 @@ def project_ontology(
                     n_iter=n_iter,
                     seed=seed,
                     show_progress=show_progress,
-                    progress_message='Permuting '+ct+'...',
+                    progress_message=f"Permuting {ct}...",
                 )
-                score_df.loc[pair.score.index, pair.score.columns] = pair.score
-                assert pval_df is not None
-                pval_df.loc[pair.pval.index, pair.pval.columns] = pair.pval
+                score_sub.loc[pair.score.index, pair.score.columns] = pair.score
+                assert pval_sub is not None
+                pval_sub.loc[pair.pval.index, pair.pval.columns] = pair.pval
 
-    pval_out = None if method == "dot" else pval_df
+        # Returned object in non-inplace mode is the overlap-only result
+        score_df = score_sub
+        pval_out = None if method == "dot" else pval_sub
 
+        # Expand back to full AnnData dimensions only for storage in .obsm
+        if inplace:
+            score_full = pd.DataFrame(
+                np.nan,
+                index=adata.obs_names,
+                columns=weights.index,
+                dtype=float,
+            )
+            score_full.loc[score_sub.index, score_sub.columns] = score_sub
+            score_df = score_full
+
+            if method == "permutation":
+                pval_full = pd.DataFrame(
+                    np.nan,
+                    index=adata.obs_names,
+                    columns=weights.index,
+                    dtype=float,
+                )
+                assert pval_sub is not None
+                pval_full.loc[pval_sub.index, pval_sub.columns] = pval_sub
+                pval_out = pval_full
+
+    # ------------------------------------------------------------------
+    # Storage / return
+    # ------------------------------------------------------------------
     if inplace:
         if store_sparse_scores:
             score_store = sp.csr_matrix(score_df.fillna(0.0).to_numpy(dtype=np.float32))
