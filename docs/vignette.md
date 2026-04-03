@@ -3,6 +3,7 @@
 This vignette shows a typical end-to-end workflow for `scfo` using:
 
 - `factor_loadings`: gene-by-factor loading matrix
+- `hallmark_lib_dict` and `gene_sets_dict`: dictionaries of MSigDB Hallmark gene sets or user-defined gene sets (unranked lists)
 - `regulon_loadings`: gene-by-regulon loading matrix
 - `liana`: raw long-form LIANA output
 - an external `AnnData` object for projection and downstream testing
