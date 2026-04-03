@@ -13,7 +13,7 @@ The package is designed for workflows in which a matrix of **gene-by-factor load
 
 With `scfo`, you can:
 
-- **build an ontology** from factor loadings plus optional regulon and ligand–receptor inputs
+- **build an ontology** from factor loadings plus optional gene set, regulon and ligand–receptor inputs
 - **inspect and visualize** factor weights, modality enrichments, and feature loadings
 - **project ontology factors** onto external `AnnData` objects
 - **test ontology scores** between biological groups at single-cell or pseudobulk level
