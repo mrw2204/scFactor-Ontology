@@ -43,6 +43,7 @@ def project_ontology(
     pval_key_added: str = "scfo_pvals",
     score_columns_uns_key: Optional[str] = None,
     store_sparse_scores: bool = True,
+    show_progress = True,
 ) -> Optional[Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:
     """
     Project an ontology onto an AnnData object.
@@ -143,7 +144,7 @@ def project_ontology(
                 weights.loc[:, common].T,
                 n_iter=n_iter,
                 seed=seed,
-                show_progress=False,
+                show_progress=show_progress,
             )
             score_df.loc[pair.score.index, pair.score.columns] = pair.score
             assert pval_df is not None
@@ -195,7 +196,7 @@ def project_ontology(
                     W_ct.loc[:, common].T,
                     n_iter=n_iter,
                     seed=seed,
-                    show_progress=False,
+                    show_progress=show_progress,
                 )
                 score_df.loc[pair.score.index, pair.score.columns] = pair.score
                 assert pval_df is not None
