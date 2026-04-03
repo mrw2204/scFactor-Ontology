@@ -19,102 +19,305 @@ from .core import (
 )
 
 
+from __future__ import annotations
+
+from typing import Optional, Tuple
+
+import anndata as ad
+import muon as mu
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+
+
 def project_ontology(
     adata: ad.AnnData,
     ontology: mu.MuData,
-    layer: Optional[str] = None,
     annotation_key: Optional[str] = None,
-    score_key_added: str = "ontology_scores",
-    pval_key_added: str = "ontology_pvals",
-    method: str = "permutation",
+    layer: Optional[str] = None,
+    method: str = "dot",
     n_iter: int = 1000,
     seed: int = 0,
     inplace: bool = True,
+    score_key_added: str = "scfo_scores",
+    pval_key_added: str = "scfo_pvals",
+    score_columns_uns_key: Optional[str] = None,
+    store_sparse_scores: bool = True,
 ) -> Optional[Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:
-    """Project ontology factor scores onto an external ``AnnData`` object.
+    """
+    Project an ontology onto an AnnData object.
+
+    If `annotation_key` is provided, cells are only projected onto ontology factors
+    whose ontology Classification matches the cell annotation. If the AnnData and
+    ontology annotations only partially overlap, only the overlapping subset is used.
 
     Parameters
     ----------
-    adata : anndata.AnnData
-        External dataset to score.
-    ontology : muon.MuData
-        Ontology object created with :func:`make_ontology`.
-    layer : str, optional
-        Layer to use for projection. If ``None``, ``adata.X`` is used.
-    annotation_key : str, optional
-        Column in ``adata.obs`` containing cell type labels. If provided, each cell is
-        projected only against factors from the corresponding ontology lineage.
-    score_key_added : str, default="ontology_scores"
-        Key under which projected scores are stored in ``adata.obsm``.
-    pval_key_added : str, default="ontology_pvals"
-        Key under which permutation-derived p-values are stored in ``adata.obsm``.
-    method : {"permutation", "dot"}, default="permutation"
-        Scoring method. ``"permutation"`` returns z-scores and p-values, whereas
-        ``"dot"`` performs a direct dot-product projection only.
-    n_iter : int, default=1000
-        Number of permutations for permutation-based projection.
-    seed : int, default=0
+    adata
+        AnnData object with cells in rows and genes in columns.
+    ontology
+        MuData ontology object with:
+        - ontology.obsm["weights"] : factor x gene matrix
+        - ontology.uns["gene_names"] : gene names for the weight matrix
+        - ontology.obs["Classification"] : cell-type / lineage labels for factors
+    annotation_key
+        Column in `adata.obs` containing cell annotations to match against
+        `ontology.obs["Classification"]`. If None, project all cells onto all factors.
+    layer
+        Optional layer from `adata.layers` to use instead of `adata.X`.
+    method
+        Either "dot" or "permutation".
+    n_iter
+        Number of permutations if `method="permutation"`.
+    seed
         Random seed for permutation-based projection.
-    inplace : bool, default=True
-        If ``True``, store scores in ``adata.obsm``. Otherwise return them.
+    inplace
+        If True, write outputs to `adata.obsm` and return None.
+        If False, return `(score_df, pval_df_or_none)`.
+    score_key_added
+        Key for projected scores in `adata.obsm`.
+    pval_key_added
+        Key for projected p-values in `adata.obsm` when `method="permutation"`.
+    score_columns_uns_key
+        If sparse scores are stored in `adata.obsm`, the corresponding column names
+        are stored in `adata.uns[score_columns_uns_key]`. If None, defaults to
+        `f"{score_key_added}_columns"`.
+    store_sparse_scores
+        If True and `inplace=True`, store projected scores in `adata.obsm` as a CSR
+        sparse matrix after replacing NaN with 0. Column names are stored in `adata.uns`.
+        If False, store the score DataFrame directly in `adata.obsm`.
 
     Returns
     -------
-    None or tuple of pandas.DataFrame
-        If ``inplace=True``, returns ``None``. Otherwise returns ``(scores, pvals)``.
+    None or (pandas.DataFrame, pandas.DataFrame or None)
+        If `inplace=True`, returns None.
+        Otherwise returns `(score_df, pval_df_or_none)`.
     """
+    if method not in {"dot", "permutation"}:
+        raise ValueError("method must be 'permutation' or 'dot'.")
+
     if "weights" not in ontology.obsm:
         raise KeyError("ontology.obsm['weights'] not found.")
     if "gene_names" not in ontology.uns:
         raise KeyError("ontology.uns['gene_names'] not found.")
+    if "Classification" not in ontology.obs.columns:
+        raise KeyError("ontology.obs['Classification'] not found.")
+
+    if score_columns_uns_key is None:
+        score_columns_uns_key = f"{score_key_added}_columns"
+
     X_df = get_matrix_from_adata(adata, layer=layer)
-    weights = factor_weights_to_df(ontology)
+    weights = factor_weights_to_df(ontology)  # factor x gene
     factor_meta = ontology.obs.reindex(weights.index).copy()
-    score_df = pd.DataFrame(np.nan, index=adata.obs_names, columns=weights.index, dtype=float)
-    pval_df = pd.DataFrame(np.nan, index=adata.obs_names, columns=weights.index, dtype=float)
+
+    if factor_meta["Classification"].isna().any():
+        factor_meta["Classification"] = factor_meta["Classification"].fillna("Unknown")
+
+    # Full-size outputs so they can always be stored in .obsm
+    score_df = pd.DataFrame(
+        np.nan,
+        index=adata.obs_names,
+        columns=weights.index,
+        dtype=float,
+    )
+    pval_df = None
+    if method == "permutation":
+        pval_df = pd.DataFrame(
+            np.nan,
+            index=adata.obs_names,
+            columns=weights.index,
+            dtype=float,
+        )
+
     if annotation_key is None:
         common = X_df.columns.intersection(weights.columns)
+        if len(common) == 0:
+            raise ValueError("No overlapping genes between adata and ontology weights.")
+
         if method == "dot":
             proj = X_df.loc[:, common] @ weights.loc[:, common].T
-            score_df.loc[:, proj.columns] = proj
-            pval_out = None
-        elif method == "permutation":
-            pair = calc_enrichment(X_df.loc[:, common], weights.loc[:, common].T, n_iter=n_iter, seed=seed, show_progress=False)
-            score_df.loc[:, pair.score.columns] = pair.score
-            pval_df.loc[:, pair.pval.columns] = pair.pval
-            pval_out = pval_df
+            score_df.loc[proj.index, proj.columns] = proj
         else:
-            raise ValueError("method must be 'permutation' or 'dot'.")
+            pair = calc_enrichment(
+                X_df.loc[:, common],
+                weights.loc[:, common].T,
+                n_iter=n_iter,
+                seed=seed,
+                show_progress=False,
+            )
+            score_df.loc[pair.score.index, pair.score.columns] = pair.score
+            assert pval_df is not None
+            pval_df.loc[pair.pval.index, pair.pval.columns] = pair.pval
+
     else:
         if annotation_key not in adata.obs.columns:
             raise KeyError(f"annotation_key '{annotation_key}' not found in adata.obs.")
-        for ct, cell_idx in adata.obs.groupby(annotation_key, sort=False).groups.items():
-            factor_idx = factor_meta.index[factor_meta["Classification"].astype(str) == str(ct)]
-            if len(factor_idx) == 0 or len(cell_idx) == 0:
+
+        adata_classes = pd.Index(
+            adata.obs[annotation_key].dropna().astype(str).unique()
+        )
+        ontology_classes = pd.Index(
+            ontology.obs["Classification"].dropna().astype(str).unique()
+        )
+        cl_common = adata_classes.intersection(ontology_classes)
+
+        if len(cl_common) == 0:
+            raise ValueError(
+                "No overlapping classifications between "
+                f"adata.obs['{annotation_key}'] and ontology.obs['Classification']."
+            )
+
+        annotation_series = adata.obs[annotation_key].astype(str)
+        factor_classes = factor_meta["Classification"].astype(str)
+
+        for ct in cl_common:
+            cell_idx = annotation_series.index[annotation_series == ct]
+            if len(cell_idx) == 0:
                 continue
+
+            factor_idx = factor_meta.index[factor_classes == ct]
+            if len(factor_idx) == 0:
+                continue
+
             X_ct = X_df.loc[cell_idx]
             W_ct = weights.loc[factor_idx]
             common = X_ct.columns.intersection(W_ct.columns)
             if len(common) == 0:
                 continue
+
             if method == "dot":
                 proj = X_ct.loc[:, common] @ W_ct.loc[:, common].T
-                score_df.loc[cell_idx, proj.columns] = proj
-            elif method == "permutation":
-                pair = calc_enrichment(X_ct.loc[:, common], W_ct.loc[:, common].T, n_iter=n_iter, seed=seed, show_progress=False)
-                score_df.loc[cell_idx, pair.score.columns] = pair.score
-                pval_df.loc[cell_idx, pair.pval.columns] = pair.pval
+                score_df.loc[proj.index, proj.columns] = proj
+
             else:
-                raise ValueError("method must be 'permutation' or 'dot'.")
-        pval_out = None if method == "dot" else pval_df
+                pair = calc_enrichment(
+                    X_ct.loc[:, common],
+                    W_ct.loc[:, common].T,
+                    n_iter=n_iter,
+                    seed=seed,
+                    show_progress=False,
+                )
+                score_df.loc[pair.score.index, pair.score.columns] = pair.score
+                assert pval_df is not None
+                pval_df.loc[pair.pval.index, pair.pval.columns] = pair.pval
+
+    pval_out = None if method == "dot" else pval_df
+
     if inplace:
-        adata.obsm[score_key_added] = score_df
+        if store_sparse_scores:
+            score_store = sp.csr_matrix(score_df.fillna(0.0).to_numpy(dtype=np.float32))
+            adata.obsm[score_key_added] = score_store
+            adata.uns[score_columns_uns_key] = list(map(str, score_df.columns))
+        else:
+            adata.obsm[score_key_added] = score_df
+            if score_columns_uns_key in adata.uns:
+                del adata.uns[score_columns_uns_key]
+
         if pval_out is not None:
             adata.obsm[pval_key_added] = pval_out
         elif pval_key_added in adata.obsm:
             del adata.obsm[pval_key_added]
+
         return None
+
     return score_df, pval_out
+
+def collapse_projected_ontology_scores(
+    adata: ad.AnnData,
+    score_key: str = "scfo_scores",
+    output_key: Optional[str] = None,
+    columns_uns_key: Optional[str] = None,
+    separator: str = "|",
+    agg: str = "sum",
+    store_sparse: bool = False,
+    output_columns_uns_key: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Collapse a projected ontology score matrix from
+    n_cells x (n_factors x n_celltypes) to n_cells x n_factors.
+
+    This is most useful after annotation-aware projection, where for each cell only
+    one lineage-specific block is typically populated and the rest are zero/empty.
+
+    Parameters
+    ----------
+    adata
+        AnnData object containing projected ontology scores in `.obsm`.
+    score_key
+        Key in `adata.obsm` containing the projected score matrix.
+    output_key
+        Optional key to write the collapsed matrix back into `adata.obsm`.
+        If None, nothing is written.
+    columns_uns_key
+        Key in `adata.uns` containing column names for `adata.obsm[score_key]`
+        when that matrix is stored sparsely. If None, defaults to
+        `f"{score_key}_columns"`.
+    separator
+        Separator between factor name and cell type, e.g. `Factor0|Tumor`.
+    agg
+        Aggregation across cell types for the same factor. One of:
+        `"sum"`, `"max"`, `"mean"`.
+        For annotation-aware sparse projections, `"sum"` is usually appropriate.
+    store_sparse
+        If `output_key` is provided, whether to store the collapsed result as CSR
+        sparse matrix in `.obsm`.
+    output_columns_uns_key
+        If storing sparse output, column names are written to this key in `.uns`.
+        If None, defaults to `f"{output_key}_columns"`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Collapsed cell-by-factor DataFrame.
+    """
+    if score_key not in adata.obsm:
+        raise KeyError(f"adata.obsm['{score_key}'] not found.")
+
+    obj = adata.obsm[score_key]
+
+    if isinstance(obj, pd.DataFrame):
+        score_df = obj.copy()
+    else:
+        if columns_uns_key is None:
+            columns_uns_key = f"{score_key}_columns"
+        if columns_uns_key not in adata.uns:
+            raise KeyError(
+                f"adata.uns['{columns_uns_key}'] not found. "
+                "Column names are required when collapsing a sparse/array obsm matrix."
+            )
+        cols = pd.Index(list(map(str, adata.uns[columns_uns_key])), name="factor_celltype")
+        score_df = pd.DataFrame(
+            as_dense(obj),
+            index=adata.obs_names,
+            columns=cols,
+        )
+
+    base_factor_names = pd.Index(
+        [str(c).split(separator, 1)[0] for c in score_df.columns],
+        name="factor",
+    )
+
+    if agg == "sum":
+        collapsed = score_df.T.groupby(base_factor_names).sum().T
+    elif agg == "max":
+        collapsed = score_df.T.groupby(base_factor_names).max().T
+    elif agg == "mean":
+        collapsed = score_df.T.groupby(base_factor_names).mean().T
+    else:
+        raise ValueError("agg must be one of {'sum', 'max', 'mean'}.")
+
+    collapsed = collapsed.loc[adata.obs_names]
+
+    if output_key is not None:
+        if store_sparse:
+            if output_columns_uns_key is None:
+                output_columns_uns_key = f"{output_key}_columns"
+            adata.obsm[output_key] = sp.csr_matrix(collapsed.to_numpy(dtype=np.float32))
+            adata.uns[output_columns_uns_key] = list(map(str, collapsed.columns))
+        else:
+            adata.obsm[output_key] = collapsed
+
+    return collapsed
 
 
 def _normalize_cell_types(cell_types: Optional[Union[str, Sequence[str]]]) -> Optional[list]:
