@@ -304,6 +304,19 @@ project_ontology(
 )
 ```
 
+If projection is done in cell-type-aware mode, the resulting dataframe in `.obsm` contains NaN values for non-tested cell type x factor combinations. To collapse to a more convient format (`n_cells` x `n_factors`), use the following:
+
+```python
+collapsed = scfo.collapse_projected_ontology_scores(
+    adata=adata_external,
+    score_key="ontology_scores",
+    output_key="ontology_scores_collapsed",
+    agg="sum",
+    store_sparse=False,
+)
+```
+
+
 ### Fast dot-product projection
 
 ```python
