@@ -165,6 +165,7 @@ def calc_enrichment(
     n_iter: int = 1000,
     seed: int = 0,
     show_progress: bool = True,
+    progress_message: str = 'Permuting...',
 ) -> MatrixPair:
     X_df = ensure_no_nan(require_dataframe(samples_by_genes, "samples_by_genes"), "samples_by_genes")
     W_df = ensure_no_nan(require_dataframe(signatures, "signatures"), "signatures")
@@ -184,7 +185,7 @@ def calc_enrichment(
     count_le = np.ones_like(obs, dtype=np.int32)
     iterator = range(1, n_iter + 1)
     if show_progress:
-        iterator = tqdm(iterator, desc="Permuting", leave=False)
+        iterator = tqdm(iterator, desc=progress_message, leave=False)
     for t in iterator:
         perm = rng.permutation(n_genes)
         null_t = X @ W[perm, :]
