@@ -268,6 +268,10 @@ fig, ax = plot_modality_feature_top_items(
 
 ## Project ontology factors onto an external `AnnData`
 
+- Factors can be projected onto external expression data in AnnData format. Projection scores are calculated as the dot product `expression @ loadings`, using the intersection of gene names.
+- This can be done in "Global" mode (every factor projected onto every cell), or "Cell-type-aware" mode (restricting comparisons to cells x factors with matching annotations).
+- If `annotation_key` is only partially overlapping with annotation categories in `ontology`, then projections are only calculated for the intersection of annotations.
+
 ### Global projection
 
 ```python
