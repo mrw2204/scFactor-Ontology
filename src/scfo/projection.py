@@ -145,6 +145,7 @@ def project_ontology(
                 n_iter=n_iter,
                 seed=seed,
                 show_progress=show_progress,
+                progress_message='Permuting globally...',
             )
             score_df.loc[pair.score.index, pair.score.columns] = pair.score
             assert pval_df is not None
@@ -197,6 +198,7 @@ def project_ontology(
                     n_iter=n_iter,
                     seed=seed,
                     show_progress=show_progress,
+                    progress_message='Permuting '+ct+'...',
                 )
                 score_df.loc[pair.score.index, pair.score.columns] = pair.score
                 assert pval_df is not None
