@@ -116,13 +116,13 @@ liana[
 
 The package implements user-defined pruning of the raw LIANA output to construct LR signatures:
 
-- `score = magnitude_rank * specificity_rank`
-- construct pair-wise LR signatures representing overall communication between sender and receiver populations
-- distinguish "sending" and "receiving" activities as two separate signature sets
+- scores individual LR pairs between cell_type_sender and cell_type_receiver via `score = magnitude_rank * specificity_rank`
+- constructs pair-wise LR signatures representing overall (summed score) communication between sender and receiver populations (e.g. signature `rec by|Mo_TAM` containing summed scores for each `ligand|Tumor` summed across every possible `receptor|Mo_TAM`)
+- Distinguishes "sending" and "receiving" activities as two separate signature sets
 - LR pair loadings within signatures can be pruned with `liana_z_threshold`
-- optional pruning based on representation of LR pairs in factors is computed from normalized factor weights via `factor_z_threshold`
-- filtered ligand and receptor signatures are built from retained interactions and used as signatures for permutation-based enrichment in factors
-- answers the following question format: "Factor0|Tumor is involved in sending ligands to Mo-TAMs because of positive `rec by|Mo_TAM` enrichment score."
+- Allows optional pruning based on representation of LR pairs in factors, computed from normalized factor weights ,via `factor_z_threshold`
+- Filtered ligand and receptor signatures are built from retained interactions and used as signatures for permutation-based enrichment in factors
+- Answers the following question format: "Factor0|Tumor is involved in sending ligands to Mo-TAMs because of its positive `rec by|Mo_TAM` enrichment score."
 
 For the final ontology:
 
