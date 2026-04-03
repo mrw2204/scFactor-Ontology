@@ -18,7 +18,7 @@ from .core import (
     regulon_enrichment,
     top_features_for_factor,
 )
-from .projection import project_ontology, signature_enrichment
+from .projection import project_ontology, signature_enrichment, collapse_projected_ontology_scores
 from .stats import collect_score_matrices, diff_exp_ontology
 from .io import export_ontology_excel, load_ontology_excel
 from .plotting import plot_factor_top_features, plot_modality_feature_top_items
@@ -49,4 +49,5 @@ __all__ = [
     "load_ontology_excel",
     "plot_factor_top_features",
     "plot_modality_feature_top_items",
+    "collapse_projected_ontology_scores",
 ]
