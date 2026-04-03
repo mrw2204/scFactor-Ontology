@@ -36,7 +36,10 @@ from scfo import (
 
 ### Factor loadings
 
-`factor_loadings` should be a DataFrame with genes as rows and factors as columns.
+`factor_loadings` should be a DataFrame with genes as rows and factors as columns. Factors can be bi-directional (e.g. MOFA) or uni-directional (e.g. scHPF).
+Enrichment-based meta-annotation of these factors will be calculated based on user-chosen modalities (e.g. PySCENIC regulons, LIANA ligand-receptor scores, Hallmark/gene sets, etc.). 
+Modalities can be arbitrary lists/vectors of genes representing any source of prior knowledge.
+The package automatically uses preranked GSEA for enrichment of gene sets, and a permutation-based dot product algorithm for enrichment of vectors in factors. Empirical p-values are also returned.
 
 ```python
 factor_loadings.shape
@@ -50,6 +53,28 @@ Factor0|Tumor
 Factor1|Tumor
 Factor0|Mo_TAM
 ```
+
+### Preranked gene set enrichment
+
+Performs gene-ontology (GO)-style analysis.
+`hallmark_lib` should be a dictionary with the desired species/release for MSigDB Hallmark gene sets.
+`gene_sets` should be a dictionary of additional gene sets (lists) of interest.
+
+For gene sets, use a dictionary like:
+
+```text
+gene_sets_dict = {
+        'Mesenchymal': ['CEBPB', 'VIM', 'LGALS3', ...],
+        'Proneural': ['SOX2', 'OLIG2', 'PDGFRA', ...],
+        ...
+    }
+```
+
+The package will:
+
+- compute enrichment scores/p-values using pre-ranked gene set enrichment analysis (GSEA with gseapy) with each factor as a ranked signature
+- assign the 'hallmarks' and 'gene_sets' modalities with variable names corresponding to keys in the passed dictionaries
+- store factor-wise enrichment scores and nominal p-values from GSEA as .X of the modality
 
 ### Regulon loadings
 
@@ -65,8 +90,8 @@ IRF1(+)|Endothelial
 
 The package will:
 
-- compute enrichment only against the matching lineage-specific regulons
-- expose the final regulon modality with shared variables like `CEBPB(+)`
+- compute enrichment of lineage-specific regulons within each factor of the corresponding lineage only.
+- convert variable names to shared transcription factors such as `CEBPB(+)`
 - store lineage-specific regulon definitions in `ontology.mod["regulons"].varm`
 
 ### LIANA input
@@ -88,19 +113,22 @@ liana[
 ].head()
 ```
 
-The package reproduces the original LIANA workflow used to construct LR signatures:
+The package implements user-defined pruning of the raw LIANA output to construct LR signatures:
 
 - `score = magnitude_rank * specificity_rank`
-- factor support is computed from normalized factor weights
-- interaction blocks are z-scored within each sender/receiver pair
-- filtered ligand and receptor signatures are built from retained interactions
+- construct pair-wise LR signatures representing overall communication between sender and receiver populations
+- distinguish "sending" and "receiving" activities as two separate signature sets
+- LR pair loadings within signatures can be pruned with `liana_z_threshold`
+- optional pruning based on representation of LR pairs in factors is computed from normalized factor weights via `factor_z_threshold`
+- filtered ligand and receptor signatures are built from retained interactions and used as signatures for permutation-based enrichment in factors
+- answers the following question format: "Factor0|Tumor is involved in sending ligands to Mo-TAMs because of positive `rec by|Mo_TAM` enrichment score."
 
 For the final ontology:
 
 - `liana_ligand` variables are shared context names like `rec by|Tumor`, `rec by|Mo_TAM`, ...
 - `liana_receptor` variables are shared context names like `sent by|Tumor`, `sent by|Mo_TAM`, ...
 
-Internally, LIANA signatures are first constructed in the original paired format so that each factor is enriched only against the matching lineage-specific row block. These lineage-specific signature matrices are preserved in `varm`.
+Lineage-specific gene-wise signature matrices are preserved in `varm`.
 
 ## Build the ontology
 
@@ -108,6 +136,8 @@ Internally, LIANA signatures are first constructed in the original paired format
 ontology = make_ontology(
     factor_loadings=factor_loadings.fillna(0),
     regulon_loadings=regulon_loadings.fillna(0),
+    hallmark_lib=hallmark_lib_dict,
+    gene_sets=gene_sets_dict,
     liana=liana,
     n_iter=1000,
 )
@@ -123,7 +153,7 @@ Typical modalities:
 
 ```python
 list(ontology.mod.keys())
-# ['regulons', 'liana_ligand', 'liana_receptor']
+# ['regulons', 'liana_ligand', 'liana_receptor', 'hallmark', 'gene_sets']
 ```
 
 ## Inspect the ontology
@@ -187,7 +217,7 @@ Or plot them directly:
 fig, ax = plot_factor_top_features(
     ontology,
     factor="Factor0|Tumor",
-    modality="regulons",
+    modality="hallmark",
     n_pos=10,
     n_neg=10,
 )
@@ -311,6 +341,8 @@ test_adata_pb, de_results_pb = diff_exp_ontology(
 
 ## Signature enrichment
 
+Allows for querying factors, ligand/receptor signatures, regulons, etc. for enrichment of a user-defined gene list or vector (i.e. external differential expression signature).
+
 ### Unweighted curated gene set
 
 ```python
@@ -341,7 +373,7 @@ sig_results = signature_enrichment(
 
 Each query target returns:
 
-- `results`: ranked enrichment table
+- `results`: ranked enrichment table (GSEA-based for lists, permutation-based for vectors)
 - `overlap`: overlap summary between the query and the queried ontology target
 
 Example:
@@ -383,6 +415,8 @@ ontology = make_ontology(
     factor_loadings=factor_loadings.fillna(0),
     regulon_loadings=regulon_loadings.fillna(0),
     liana=liana,
+    hallmark_lib=hallmark_lib_dict,
+    gene_sets=gene_sets_dict,
     n_iter=1000,
 )
 
