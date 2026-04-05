@@ -597,7 +597,44 @@ def _split_base_and_cell_type(labels: Sequence[str], separator: str = "|") -> Tu
     )
     return base, ct
 
+def _collapse_column_cell_type_tagged_matrix(
+    df: pd.DataFrame,
+    separator: str = "|",
+    allowed_cell_types: Optional[Sequence[str]] = None,
+) -> pd.DataFrame:
+    """
+    Collapse a gene-by-(feature|cell_type) matrix to gene-by-feature form.
 
+    Rows are plain genes.
+    Columns are expected to be labeled like ``<feature>|<cell_type>``.
+    Only columns whose cell type is in ``allowed_cell_types`` are retained when
+    that argument is provided. After stripping suffixes, duplicate feature names
+    are summed.
+    """
+    require_dataframe(df, "df")
+    out = df.copy()
+    out.index = out.index.astype(str)
+    out.columns = out.columns.astype(str)
+
+    base_cols = pd.Index(
+        [c.rsplit(separator, 1)[0] if separator in c else c for c in out.columns],
+        name=out.columns.name,
+    )
+    col_ct = pd.Index(
+        [c.rsplit(separator, 1)[1] if separator in c else None for c in out.columns],
+        name="cell_type",
+    )
+
+    if allowed_cell_types is not None:
+        allowed = pd.Index([str(x) for x in allowed_cell_types])
+        keep = col_ct.isin(allowed)
+        out = out.loc[:, keep]
+        base_cols = base_cols[keep]
+
+    out.columns = base_cols
+    out = out.T.groupby(level=0, sort=False).sum().T
+    return out
+    
 def _collapse_cell_type_tagged_matrix(
     df: pd.DataFrame,
     separator: str = "|",
@@ -819,15 +856,15 @@ def add_modality(
     ``modality_data`` as either a mapping or a library name string, and factor
     enrichment is computed using :func:`gsea_enrichment`.
 
-    For scored modalities, two enrichment modes are supported. In cell-type
+    For scored modalities, two enrichment modes are supported. In cell-type-
     agnostic mode, every feature column is evaluated against every ontology
-    factor using the shared gene space. In cell-type-aware mode, row and
-    column labels in ``modality_data`` are expected to carry a cell-type suffix
-    after ``cell_type_separator`` (for example ``GeneA|Tumor`` and
-    ``Feature1|Tumor``). In that case, enrichment is computed only within
-    matching ontology/modality cell-type blocks. By default, cell-type-aware
-    scored modalities are collapsed back to a factor-by-feature matrix, rather
-    than expanding features across cell types.
+    factor using the shared gene space. In cell-type-aware mode, only the
+    modality columns are expected to carry a cell-type suffix after
+    ``cell_type_separator`` (for example ``Feature1|Tumor``). Modality rows
+    remain plain genes. In that case, enrichment is computed only between
+    ontology factors whose ``Classification`` matches the column cell-type tag.
+    By default, cell-type-aware scored modalities are collapsed back to a
+    factor-by-feature matrix after stripping the feature suffixes.
 
     The resulting modality is stored as an ``AnnData`` object in
     ``ontology.mod[modality_name]``. The score matrix is stored in ``.X``,
@@ -873,12 +910,11 @@ def add_modality(
     feature_loadings
         Optional gene-by-feature loading or signature matrix to store in
         ``varm``. Rows correspond to genes and columns correspond to the final
-        modality features. This can be used for modalities that have an
-        interpretable feature-level representation. For scored modalities, if
-        this argument is not provided and
-        ``store_input_as_feature_loadings=True``, the input weighted matrix is
-        stored automatically. In cell-type-aware scored mode with collapsed
-        output, the input matrix is first collapsed to gene-by-feature form.
+        modality features. For scored modalities, if this argument is not
+        provided and ``store_input_as_feature_loadings=True``, the input matrix
+        is stored automatically. In cell-type-aware scored mode with collapsed
+        output, feature-loading columns are collapsed in the same way as the
+        output score matrix.
     feature_loading_key
         Key under which ``feature_loadings`` are stored in the modality
         ``varm`` slot.
@@ -909,17 +945,17 @@ def add_modality(
         explicitly.
     scored_cell_type_aware
         Whether scored modalities should be handled in a cell-type-aware manner.
-        If ``False``, scored enrichment is performed in a fully cell-type
-        agnostic fashion. If ``True``, rows and columns of ``modality_data``
-        are matched to ontology factor lineages using the suffix after
-        ``cell_type_separator``.
+        If ``False``, scored enrichment is performed in a fully cell-type-
+        agnostic fashion. If ``True``, only modality columns are matched to
+        ontology factor lineages using the suffix after ``cell_type_separator``.
+        Modality rows remain plain genes.
     cell_type_separator
-        Separator used to parse cell-type tags from ontology factor names and
-        from row/column labels in cell-type-aware scored modalities.
+        Separator used to parse cell-type tags from factor names and scored
+        modality feature columns.
     collapse_cell_type_aware_scores
         Whether cell-type-aware scored outputs should be collapsed to
-        factor-by-feature form. If ``False``, feature columns retain their
-        cell-type suffixes.
+        factor-by-feature form. If ``False``, output feature columns retain
+        their cell-type suffixes.
     inplace
         Whether to modify ``ontology`` in place. If ``True``, the ontology is
         updated directly and the function returns ``None``. If ``False``, a
@@ -930,16 +966,6 @@ def add_modality(
     None or muon.MuData
         Returns ``None`` if ``inplace=True``. Otherwise returns an updated copy
         of the ontology object containing the new modality.
-
-    Raises
-    ------
-    ValueError
-        Raised if the provided inputs are incompatible with the requested
-        ``modality_type``, if required ontology fields are missing, or if the
-        supplied factor indices are inconsistent with the ontology.
-    TypeError
-        Raised if a gene-set modality is requested but ``modality_data`` is not
-        a supported mapping or string input.
     """
     permutation_kwargs = dict(permutation_kwargs or {})
     gsea_kwargs = dict(gsea_kwargs or {})
@@ -1013,24 +1039,83 @@ def add_modality(
         perm_kwargs.update(permutation_kwargs)
         perm_progress_message = perm_kwargs.pop(
             "progress_message",
-            f"Calculating enrichment for '{modality_name}'...",
+            f"Permuting for '{modality_name}'...",
         )
 
         if scored_cell_type_aware:
-            pair, auto_feature_loadings = _scored_enrichment_cell_type_aware(
-                factor_weights=factor_weights,
-                factor_meta=factor_meta,
-                modality_df=modality_df,
-                cell_type_separator=cell_type_separator,
-                collapse_output=collapse_cell_type_aware_scores,
-                progress_message=perm_progress_message,
-                **perm_kwargs,
+            feature_base = pd.Index(
+                [c.rsplit(cell_type_separator, 1)[0] if cell_type_separator in c else c for c in modality_df.columns],
+                name=modality_df.columns.name,
             )
-            score_df = pair.score
-            pval_df = pair.pval
+            feature_ct = pd.Index(
+                [c.rsplit(cell_type_separator, 1)[1] if cell_type_separator in c else None for c in modality_df.columns],
+                name="cell_type",
+            )
+
+            factor_classes = factor_meta["Classification"].dropna().astype(str)
+            common_cts = pd.Index(factor_classes.unique()).intersection(
+                pd.Index([x for x in feature_ct if x is not None]).unique()
+            )
+
+            if len(common_cts) == 0:
+                raise ValueError(
+                    "No overlapping cell types were found between ontology factor "
+                    "classifications and scored modality column suffixes."
+                )
+
+            score_blocks: List[pd.DataFrame] = []
+            pval_blocks: List[pd.DataFrame] = []
+
+            for ct in common_cts:
+                factor_idx = factor_meta.index[factor_meta["Classification"].astype(str) == ct]
+                if len(factor_idx) == 0:
+                    continue
+
+                col_mask = feature_ct == ct
+                if col_mask.sum() == 0:
+                    continue
+
+                mod_ct = modality_df.loc[:, col_mask].copy()
+                mod_ct.columns = feature_base[col_mask]
+                mod_ct = mod_ct.T.groupby(level=0, sort=False).sum().T
+
+                pair = calc_enrichment(
+                    samples_by_genes=factor_weights.loc[factor_idx],
+                    signatures=mod_ct,
+                    progress_message=f"{perm_progress_message} [{ct}]",
+                    **perm_kwargs,
+                )
+
+                if collapse_cell_type_aware_scores:
+                    pair.score.columns = pair.score.columns.astype(str)
+                    pair.pval.columns = pair.pval.columns.astype(str)
+                else:
+                    pair.score.columns = [f"{c}{cell_type_separator}{ct}" for c in pair.score.columns]
+                    pair.pval.columns = [f"{c}{cell_type_separator}{ct}" for c in pair.pval.columns]
+
+                score_blocks.append(pair.score)
+                pval_blocks.append(pair.pval)
+
+            if len(score_blocks) == 0:
+                raise ValueError("No cell-type-aware scored enrichments were produced.")
+
+            all_features = pd.Index(sorted(set().union(*[df.columns for df in score_blocks])))
+            score_df = pd.concat([df.reindex(columns=all_features) for df in score_blocks], axis=0)
+            pval_df = pd.concat([df.reindex(columns=all_features) for df in pval_blocks], axis=0)
+
+            score_df = score_df.reindex(index=factor_index, columns=all_features)
+            pval_df = pval_df.reindex(index=factor_index, columns=all_features)
 
             if feature_loadings is None and store_input_as_feature_loadings:
-                feature_loadings = auto_feature_loadings
+                if collapse_cell_type_aware_scores:
+                    feature_loadings = _collapse_column_cell_type_tagged_matrix(
+                        modality_df,
+                        separator=cell_type_separator,
+                        allowed_cell_types=common_cts,
+                    )
+                    feature_loadings = feature_loadings.reindex(columns=score_df.columns).fillna(0.0)
+                else:
+                    feature_loadings = modality_df.copy()
 
         else:
             pair = calc_enrichment(
@@ -1096,7 +1181,7 @@ def add_modality(
 
         if inferred_type == "scored" and scored_cell_type_aware and collapse_cell_type_aware_scores:
             if not pd.Index(score_df.columns).isin(feature_loadings.columns).all():
-                feature_loadings = _collapse_cell_type_tagged_matrix(
+                feature_loadings = _collapse_column_cell_type_tagged_matrix(
                     feature_loadings,
                     separator=cell_type_separator,
                     allowed_cell_types=factor_meta["Classification"].dropna().astype(str).unique(),
@@ -1108,7 +1193,7 @@ def add_modality(
         score_df=score_df,
         pval_df=pval_df,
         feature_loadings=feature_loadings,
-        factor_metadata=factor_meta,
+        factor_metadata=ontology.obs.reindex(factor_index).copy(),
         feature_loading_key=feature_loading_key,
     )
 
@@ -1121,6 +1206,9 @@ def add_modality(
 
     if inferred_type == "gene_set":
         if isinstance(modality_data, Mapping):
+            mod_adata.uns["gene_sets"] = {
+                str(k): [str(g) for g in modality_data.items()]
+            }
             mod_adata.uns["gene_sets"] = {
                 str(k): [str(g) for g in v]
                 for k, v in modality_data.items()
