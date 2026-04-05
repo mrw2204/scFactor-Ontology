@@ -1379,7 +1379,7 @@ def make_ontology(
     ontology.uns["gene_names"] = list(fl.index.astype(str))
     ontology.uns["factor_type"] = factor_type
     ontology.uns["modality_names"] = list(modalities.keys())
-    del ontology.mod['weights']
+
     return ontology
 
 
