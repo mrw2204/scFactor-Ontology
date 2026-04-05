@@ -1378,22 +1378,29 @@ def add_modality(
         feature_loadings = feature_loadings.copy()
         feature_loadings.index = feature_loadings.index.astype(str)
         feature_loadings.columns = feature_loadings.columns.astype(str)
-
-        if inferred_type == "scored" and scored_cell_type_aware and collapse_cell_type_aware_scores:
+    
+        # If the provided feature loadings do not already match the score_df feature axis,
+        # try to reconcile cell-type-tagged feature columns to the collapsed score columns.
+        if not pd.Index(score_df.columns).isin(feature_loadings.columns).all():
             if _index_has_cell_type_tags(feature_loadings.columns, separator=cell_type_separator):
+                allowed_cts = factor_meta["Classification"].dropna().astype(str).unique()
+    
+                # rows already tagged: (gene|ct) x (feature|ct)  ->  (gene|ct) x feature
                 if _index_has_cell_type_tags(feature_loadings.index, separator=cell_type_separator):
                     feature_loadings = _collapse_cell_type_tagged_matrix(
                         feature_loadings,
                         separator=cell_type_separator,
-                        allowed_cell_types=factor_meta["Classification"].dropna().astype(str).unique(),
+                        allowed_cell_types=allowed_cts,
                     )
+    
+                # plain gene rows: gene x (feature|ct)  ->  (gene|ct) x feature
                 else:
                     feature_loadings = _collapse_column_cell_type_tagged_matrix_preserve_rows(
                         feature_loadings,
                         separator=cell_type_separator,
-                        allowed_cell_types=factor_meta["Classification"].dropna().astype(str).unique(),
+                        allowed_cell_types=allowed_cts,
                     )
-
+    
         feature_loadings = feature_loadings.reindex(columns=score_df.columns).fillna(0.0)
 
     mod_adata = build_modality_adata(
