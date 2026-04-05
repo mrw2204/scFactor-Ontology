@@ -6,6 +6,7 @@ import anndata as ad
 import muon as mu
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 
 from .core import (
     as_dense,
@@ -18,16 +19,6 @@ from .core import (
     signature_to_df,
 )
 
-
-from __future__ import annotations
-
-from typing import Optional, Tuple
-
-import anndata as ad
-import muon as mu
-import numpy as np
-import pandas as pd
-import scipy.sparse as sp
 
 def project_ontology(
     adata: ad.AnnData,
