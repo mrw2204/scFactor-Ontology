@@ -576,6 +576,7 @@ def add_modality(
     n_iter: int = 1000,
     seed: int = 0,
     show_progress: bool = True,
+    progress_message: str = 'Permuting...',
     permutation_kwargs: Optional[Mapping[str, Any]] = None,
     gsea_kwargs: Optional[Mapping[str, Any]] = None,
     store_input_as_feature_loadings: bool = True,
@@ -766,6 +767,7 @@ def add_modality(
         pair = calc_enrichment(
             samples_by_genes=factor_weights,
             signatures=modality_df,
+            progress_message=progress_message,
             **perm_kwargs,
         )
         score_df = pair.score
@@ -990,6 +992,7 @@ def make_ontology(
             n_iter=n_iter,
             seed=seed,
             show_progress=show_progress,
+            progress_message='Permuting for '+motality_name+'...',
         )
 
         feat = scored_feature_loadings.get(modality_name)
