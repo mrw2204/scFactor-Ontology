@@ -992,7 +992,7 @@ def make_ontology(
             n_iter=n_iter,
             seed=seed,
             show_progress=show_progress,
-            progress_message='Permuting for '+motality_name+'...',
+            progress_message=f"Permuting for '{modality_name}'...",
         )
 
         feat = scored_feature_loadings.get(modality_name)
