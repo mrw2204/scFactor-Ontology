@@ -216,6 +216,8 @@ def gsea_enrichment(
     max_size: int = 5000,
     seed: int = 42,
     processes: int = 1,
+    show_progress: bool = True,
+    progress_message: str = 'Permuting...',
 ) -> MatrixPair:
     """Robust preranked GSEA for sparse loading matrices.
 
@@ -238,8 +240,11 @@ def gsea_enrichment(
 
     nes_ls = []
     p_ls = []
-
-    for factor in fl.columns:
+    iterator = fl.columns
+    if show_progress:
+        iterator = tqdm(iterator, desc=progress_message, leave=True)
+    for t in iterator:
+    for factor in iterator:
         rnk = fl[factor].astype(float).copy()
 
         # break extreme ties deterministically
@@ -1025,12 +1030,13 @@ def make_ontology(
     # Gene-set modalities
     # -----------------------------
     for modality_name, gene_sets in dict(gene_set_modalities or {}).items():
-        print(f"Calculating GSEA for {modality_name}...")
         pair = gsea_enrichment(
             factor_loadings=fl,
             gene_sets=gene_sets,
             permutation_num=n_iter,
             seed=seed,
+            show_progress=show_progress,
+            progress_message=f"Calculating GSEA for '{modality_name}'...",
         )
 
         mod_adata = build_modality_adata(
