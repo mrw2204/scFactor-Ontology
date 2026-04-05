@@ -1285,7 +1285,7 @@ def make_ontology(
     gene_set_modality_uns = dict(gene_set_modality_uns or {})
 
     modalities: Dict[str, ad.AnnData] = {}
-    modalities['weights'] = ad.AnnData(fl.copy())
+    modalities['weights'] = ad.AnnData(fl.T.copy())
     # -----------------------------
     # Scored modalities
     # -----------------------------
