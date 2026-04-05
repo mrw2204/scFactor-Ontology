@@ -448,7 +448,26 @@ def make_filtered_lr_signatures(
 
     all_send_signatures = pd.concat(all_sig_send_ls)
     all_rec_signatures = pd.concat(all_sig_rec_ls)
-    return all_send_signatures, all_rec_signatures, filtered, all_biopsy_factors_mag, all_biopsy_factors_spec
+
+    parts_rec = []
+    receiver_types = all_rec_signatures.index.to_series().str.split("|").str[0].unique()
+    for ct in receiver_types:
+        sub = all_rec_signatures[all_rec_signatures.index.to_series().str.startswith(ct + "|")].copy()
+        sub.index = sub.index.to_series().str.split("|").str[1] 
+        sub.columns = [f"{c}|{ct}" for c in sub.columns]          
+        parts_rec.append(sub)
+    all_rec_signatures_wide = pd.concat(parts_rec, axis=1, join="outer").fillna(0)
+
+    parts_send = []
+    receiver_types = all_send_signatures.index.to_series().str.split("|").str[0].unique()
+    for ct in receiver_types:
+        sub = all_send_signatures[all_send_signatures.index.to_series().str.startswith(ct + "|")].copy()
+        sub.index = sub.index.to_series().str.split("|").str[1] 
+        sub.columns = [f"{c}|{ct}" for c in sub.columns]          
+        parts_send.append(sub)
+    all_send_signatures_wide = pd.concat(parts_send, axis=1, join="outer").fillna(0)
+    
+    return all_send_signatures_wide, all_rec_signatures_wide, filtered, all_biopsy_factors_mag, all_biopsy_factors_spec
 
 
 
