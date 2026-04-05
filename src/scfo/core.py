@@ -581,7 +581,6 @@ def add_modality(
     n_iter: int = 1000,
     seed: int = 0,
     show_progress: bool = True,
-    progress_message: str = 'Permuting...',
     permutation_kwargs: Optional[Mapping[str, Any]] = None,
     gsea_kwargs: Optional[Mapping[str, Any]] = None,
     store_input_as_feature_loadings: bool = True,
@@ -772,7 +771,8 @@ def add_modality(
         pair = calc_enrichment(
             samples_by_genes=factor_weights,
             signatures=modality_df,
-            progress_message=progress_message,
+            show_progress=show_progress,
+            progress_message=f"Permuting for '{modality_name}'...",
             **perm_kwargs,
         )
         score_df = pair.score
@@ -797,6 +797,8 @@ def add_modality(
         pair = gsea_enrichment(
             factor_loadings=factor_weights.T,
             gene_sets=modality_data,
+            show_progress=show_progress,
+            progress_message=f"Calculating GSEA for '{modality_name}'...",
             **ggsea_kwargs,
         )
         score_df = pair.score
