@@ -185,7 +185,7 @@ def calc_enrichment(
     count_le = np.ones_like(obs, dtype=np.int32)
     iterator = range(1, n_iter + 1)
     if show_progress:
-        iterator = tqdm(iterator, desc=progress_message, leave=False)
+        iterator = tqdm(iterator, desc=progress_message, leave=True)
     for t in iterator:
         perm = rng.permutation(n_genes)
         null_t = X @ W[perm, :]
@@ -1025,6 +1025,7 @@ def make_ontology(
     # Gene-set modalities
     # -----------------------------
     for modality_name, gene_sets in dict(gene_set_modalities or {}).items():
+        print(f"Calculating GSEA for {modality_name}...")
         pair = gsea_enrichment(
             factor_loadings=fl,
             gene_sets=gene_sets,
