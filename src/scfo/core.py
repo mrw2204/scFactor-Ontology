@@ -874,77 +874,72 @@ def make_ontology(
     Construct a factor-centric ontology object from factor loadings and a set of
     generic annotation modalities.
 
-    This function initializes the ontology core from a gene-by-factor loading
-    matrix and then adds annotation modalities using :func:`add_modality`.
-    Scored modalities are provided as weighted gene-by-feature matrices and are
-    processed with permutation-based enrichment. Gene-set modalities are
-    provided as unranked gene-set collections or library names and are
-    processed with GSEA. The resulting ontology stores factor metadata in
-    ``ontology.obs``, global factor weights in ``ontology.obsm["weights"]``,
-    the corresponding gene names in ``ontology.uns["gene_names"]``, and each
-    annotation modality as an ``AnnData`` object in ``ontology.mod``.
+    This function initializes ontology-wide factor metadata and factor weights,
+    computes modality enrichments for scored and gene-set modalities, stores each
+    modality as an ``AnnData`` object in ``ontology.mod``, and returns the final
+    ``MuData`` ontology.
 
     Parameters
     ----------
     factor_loadings
-        Gene-by-factor loading matrix. Rows must correspond to genes and
-        columns must correspond to ontology factors.
+        Gene-by-factor loading matrix. Rows must correspond to genes and columns
+        must correspond to ontology factors.
     factor_type
-        Label describing the origin or type of the supplied factor loadings.
-        This value is stored in ``ontology.uns["factor_type"]`` and added as
-        ``FactorType`` in the ontology factor metadata.
+        Label describing the origin or type of the factor loadings. This value is
+        stored in ``ontology.uns["factor_type"]`` and added as ``FactorType`` in
+        the factor metadata.
     factor_metadata
-        Optional factor metadata DataFrame indexed by factor name. If not
-        provided, metadata are inferred from factor names using
-        :func:`safe_factor_metadata`. If provided but incomplete, missing
-        metadata columns are filled from the inferred defaults where possible.
+        Optional factor metadata DataFrame indexed by factor name. If not provided,
+        metadata are inferred from factor names using :func:`safe_factor_metadata`.
+        If provided but incomplete, missing entries are filled from inferred defaults.
     cell_type_separator
         Separator used when parsing factor names for inferred metadata.
     scored_modalities
-        Optional mapping from modality name to a scored modality matrix.
-        Each value must be a DataFrame with rows corresponding to genes and
-        columns corresponding to modality features or signatures. Each scored
-        modality is added by calling :func:`add_modality` in scored mode.
+        Optional mapping from modality name to a weighted gene-by-feature DataFrame.
+        Each DataFrame is processed with permutation-based enrichment via
+        :func:`calc_enrichment`.
     gene_set_modalities
-        Optional mapping from modality name to an unranked gene-set collection.
-        Each value may be either a mapping of gene-set names to gene lists or a
-        string identifying a gene-set library supported by ``gseapy``. Each
-        gene-set modality is added by calling :func:`add_modality` in gene-set
-        mode.
+        Optional mapping from modality name to a gene-set collection. Each value
+        may be either a mapping of gene-set names to gene lists or a string naming
+        a gene-set library supported by ``gseapy``. These modalities are processed
+        with :func:`gsea_enrichment`.
     scored_feature_loadings
-        Optional mapping from scored modality name to an explicit
-        gene-by-feature loading matrix to store in the modality ``varm`` slot.
-        If a given scored modality is missing from this mapping, the scored
-        modality input matrix itself is stored as feature loadings by default.
+        Optional mapping from scored modality name to an explicit gene-by-feature
+        loading matrix to store in the modality ``varm`` slot. If omitted for a
+        scored modality, the scored modality input matrix itself is stored as the
+        default feature-loading matrix.
     feature_loading_key_map
         Optional mapping from modality name to the key used when storing that
         modality's feature loadings in ``varm``.
     scored_modality_uns
-        Optional mapping from scored modality name to a metadata dictionary to
-        store in the modality ``uns`` slot.
+        Optional mapping from scored modality name to a metadata dictionary stored
+        in the modality ``uns`` slot.
     gene_set_modality_uns
-        Optional mapping from gene-set modality name to a metadata dictionary to
-        store in the modality ``uns`` slot.
+        Optional mapping from gene-set modality name to a metadata dictionary stored
+        in the modality ``uns`` slot.
     n_iter
         Default number of permutations for scored modalities and default
         ``permutation_num`` passed to GSEA unless overridden downstream.
     seed
-        Default random seed passed to modality enrichment routines.
+        Default random seed passed to enrichment routines.
 
     Returns
     -------
     muon.MuData
-        Newly constructed ontology object containing factor metadata, factor
+        Newly constructed ontology object containing factor metadata, global factor
         weights, and all requested modalities.
+
+    Raises
+    ------
+    ValueError
+        Raised if no modalities are supplied, or if factor loadings are invalid.
 
     Notes
     -----
-    This function no longer performs modality-specific preprocessing for
-    ligand-receptor or regulon modalities. Instead, any required preprocessing
-    should be performed upstream. For example, LIANA outputs can be converted
-    into weighted ligand and receptor signature matrices using
-    :func:`make_filtered_lr_signatures`, and the resulting matrices can then be
-    passed through ``scored_modalities``.
+    This function no longer performs modality-specific preprocessing such as LIANA
+    signature extraction. Such preprocessing should be performed upstream, for
+    example by using :func:`make_filtered_lr_signatures` before passing the result
+    into ``scored_modalities``.
     """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings").copy()
     fl.index = fl.index.astype(str)
@@ -955,54 +950,118 @@ def make_ontology(
     else:
         factor_meta = require_dataframe(factor_metadata, "factor_metadata").copy()
         factor_meta.index = factor_meta.index.astype(str)
+
         default_meta = safe_factor_metadata(fl.columns, separator=cell_type_separator)
         factor_meta = factor_meta.reindex(default_meta.index)
+
         for col in default_meta.columns:
             if col not in factor_meta.columns:
                 factor_meta[col] = default_meta[col]
             else:
-                factor_meta[col] = factor_meta[col].where(factor_meta[col].notna(), default_meta[col])
+                factor_meta[col] = factor_meta[col].where(
+                    factor_meta[col].notna(),
+                    default_meta[col],
+                )
 
     factor_meta["FactorType"] = factor_type
-
-    ontology = mu.MuData({})
-    ontology.obs = factor_meta.copy()
-    ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
-    ontology.uns["gene_names"] = list(fl.index.astype(str))
-    ontology.uns["factor_type"] = factor_type
-    ontology.uns["modality_names"] = []
 
     scored_feature_loadings = dict(scored_feature_loadings or {})
     feature_loading_key_map = dict(feature_loading_key_map or {})
     scored_modality_uns = dict(scored_modality_uns or {})
     gene_set_modality_uns = dict(gene_set_modality_uns or {})
 
+    modalities: Dict[str, ad.AnnData] = {}
+
+    # -----------------------------
+    # Scored modalities
+    # -----------------------------
     for modality_name, modality_df in dict(scored_modalities or {}).items():
-        add_modality(
-            ontology=ontology,
-            modality_name=modality_name,
-            modality_data=modality_df,
-            modality_type="scored",
-            feature_loadings=scored_feature_loadings.get(modality_name),
-            feature_loading_key=feature_loading_key_map.get(modality_name, "feature_loadings"),
-            modality_uns=scored_modality_uns.get(modality_name, {}),
+        modality_df = ensure_no_nan(
+            require_dataframe(modality_df, f"scored_modalities['{modality_name}']"),
+            f"scored_modalities['{modality_name}']",
+        ).copy()
+        modality_df.index = modality_df.index.astype(str)
+        modality_df.columns = modality_df.columns.astype(str)
+
+        pair = calc_enrichment(
+            samples_by_genes=fl.T,
+            signatures=modality_df,
             n_iter=n_iter,
             seed=seed,
-            inplace=True,
+            show_progress=False,
         )
 
-    for modality_name, gene_sets in dict(gene_set_modalities or {}).items():
-        add_modality(
-            ontology=ontology,
-            modality_name=modality_name,
-            modality_data=gene_sets,
-            modality_type="gene_set",
+        feat = scored_feature_loadings.get(modality_name)
+        if feat is None:
+            feat = modality_df
+        else:
+            feat = ensure_no_nan(
+                require_dataframe(feat, f"scored_feature_loadings['{modality_name}']"),
+                f"scored_feature_loadings['{modality_name}']",
+            ).copy()
+            feat.index = feat.index.astype(str)
+            feat.columns = feat.columns.astype(str)
+            feat = feat.reindex(columns=pair.score.columns).fillna(0.0)
+
+        mod_adata = build_modality_adata(
+            score_df=pair.score,
+            pval_df=pair.pval,
+            feature_loadings=feat,
+            factor_metadata=factor_meta,
             feature_loading_key=feature_loading_key_map.get(modality_name, "feature_loadings"),
-            modality_uns=gene_set_modality_uns.get(modality_name, {}),
-            n_iter=n_iter,
-            seed=seed,
-            inplace=True,
         )
+        mod_adata.uns["modality_type"] = "scored"
+
+        for k, v in scored_modality_uns.get(modality_name, {}).items():
+            mod_adata.uns[k] = v
+
+        modalities[modality_name] = mod_adata
+
+    # -----------------------------
+    # Gene-set modalities
+    # -----------------------------
+    for modality_name, gene_sets in dict(gene_set_modalities or {}).items():
+        pair = gsea_enrichment(
+            factor_loadings=fl,
+            gene_sets=gene_sets,
+            permutation_num=n_iter,
+            seed=seed,
+        )
+
+        mod_adata = build_modality_adata(
+            score_df=pair.score,
+            pval_df=pair.pval,
+            feature_loadings=None,
+            factor_metadata=factor_meta,
+            feature_loading_key=feature_loading_key_map.get(modality_name, "feature_loadings"),
+        )
+        mod_adata.uns["modality_type"] = "gene_set"
+
+        if isinstance(gene_sets, Mapping):
+            mod_adata.uns["gene_sets"] = {
+                str(k): [str(g) for g in v]
+                for k, v in gene_sets.items()
+            }
+        else:
+            mod_adata.uns["gene_set_library"] = str(gene_sets)
+
+        for k, v in gene_set_modality_uns.get(modality_name, {}).items():
+            mod_adata.uns[k] = v
+
+        modalities[modality_name] = mod_adata
+
+    if len(modalities) == 0:
+        raise ValueError(
+            "make_ontology requires at least one modality in `scored_modalities` "
+            "or `gene_set_modalities` for this mudata version."
+        )
+
+    ontology = mu.MuData(modalities)
+    ontology.obs = factor_meta.copy()
+    ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
+    ontology.uns["gene_names"] = list(fl.index.astype(str))
+    ontology.uns["factor_type"] = factor_type
+    ontology.uns["modality_names"] = list(modalities.keys())
 
     return ontology
 
