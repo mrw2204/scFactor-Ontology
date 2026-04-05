@@ -1375,11 +1375,11 @@ def make_ontology(
 
     ontology = mu.MuData(modalities)
     ontology.obs = factor_meta.copy()
-    #ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
-    #ontology.uns["gene_names"] = list(fl.index.astype(str))
+    ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
+    ontology.uns["gene_names"] = list(fl.index.astype(str))
     ontology.uns["factor_type"] = factor_type
     ontology.uns["modality_names"] = list(modalities.keys())
-
+    del ontology.mod['weights']
     return ontology
 
 
