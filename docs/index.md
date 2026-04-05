@@ -1,6 +1,6 @@
 # scFactor-Ontology
 
-`scfo` is a Python package for building, querying, projecting, and visualizing **factor-centric ontology resources** from single-cell transcriptomic analyses.
+`scfo` is a Python package for building, querying, projecting, and visualizing **factor-centric ontology resources** from single-cell transcriptomic analyses. This framework helps organize, visualize, interpret, and externally implement feature-level prior knowledge derived from large single cell atlases. 
 
 The package is designed for workflows in which a matrix of **gene-by-factor loadings** is treated as a reusable biological reference and augmented with additional annotation modalities such as:
 
