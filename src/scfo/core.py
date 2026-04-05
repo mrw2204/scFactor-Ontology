@@ -243,7 +243,6 @@ def gsea_enrichment(
     iterator = fl.columns
     if show_progress:
         iterator = tqdm(iterator, desc=progress_message, leave=True)
-    for t in iterator:
     for factor in iterator:
         rnk = fl[factor].astype(float).copy()
 
