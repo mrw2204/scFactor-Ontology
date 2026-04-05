@@ -99,7 +99,6 @@ def subset_factor_loadings_by_cell_type(
     keep = meta.index[meta["Classification"] == cell_type]
     return factor_loadings.loc[:, keep].copy()
 
-
 def build_modality_adata(
     score_df: pd.DataFrame,
     pval_df: Optional[pd.DataFrame] = None,
@@ -108,23 +107,51 @@ def build_modality_adata(
     feature_loading_key: str = "feature_loadings",
 ) -> ad.AnnData:
     require_dataframe(score_df, "score_df")
+    score_df = score_df.copy()
+    score_df.index = score_df.index.astype(str)
+    score_df.columns = score_df.columns.astype(str)
+
     if pval_df is not None:
         require_dataframe(pval_df, "pval_df")
         pval_df = pval_df.reindex(index=score_df.index, columns=score_df.columns)
+
     if feature_loadings is not None:
         require_dataframe(feature_loadings, "feature_loadings")
-        feature_loadings = feature_loadings.loc[:, score_df.columns]
+        feature_loadings = feature_loadings.copy()
+        feature_loadings.index = feature_loadings.index.astype(str)
+        feature_loadings.columns = feature_loadings.columns.astype(str)
+        feature_loadings = feature_loadings.reindex(columns=score_df.columns).fillna(0.0)
 
-    obs = factor_metadata.reindex(score_df.index).copy() if factor_metadata is not None else pd.DataFrame(index=score_df.index)
+    obs = (
+        factor_metadata.reindex(score_df.index).copy()
+        if factor_metadata is not None
+        else pd.DataFrame(index=score_df.index)
+    )
     var = pd.DataFrame(index=score_df.columns)
-    adata = ad.AnnData(X=score_df.to_numpy(dtype=np.float32), obs=obs, var=var)
+
+    adata = ad.AnnData(
+        X=score_df.to_numpy(dtype=np.float32),
+        obs=obs,
+        var=var,
+    )
     adata.obs_names = score_df.index.astype(str)
     adata.var_names = score_df.columns.astype(str)
+
     if pval_df is not None:
         adata.layers["pval"] = pval_df.to_numpy(dtype=np.float32)
+
     if feature_loadings is not None:
+        # feature_loadings: loading_row x feature
+        # store as feature x loading_row in .varm
         adata.varm[feature_loading_key] = as_csr(feature_loadings.T.to_numpy(dtype=np.float32))
         adata.uns["gene_names"] = list(feature_loadings.index.astype(str))
+
+        # metadata for downstream retrieval
+        if _index_has_cell_type_tags(feature_loadings.index):
+            adata.uns["feature_loading_row_axis"] = "gene|cell_type"
+        else:
+            adata.uns["feature_loading_row_axis"] = "gene"
+
     return adata
 
 
@@ -598,6 +625,96 @@ def _split_base_and_cell_type(labels: Sequence[str], separator: str = "|") -> Tu
     )
     return base, ct
 
+def _restack_column_tagged_matrix_to_row_tagged(
+    df: pd.DataFrame,
+    separator: str = "|",
+    allowed_cell_types: Optional[Sequence[str]] = None,
+) -> pd.DataFrame:
+    """
+    Convert a plain-gene by (feature|cell_type) matrix into a
+    (gene|cell_type) by feature matrix.
+
+    Input
+    -----
+    rows
+        <gene>
+    columns
+        <feature>|<cell_type>
+
+    Output
+    ------
+    rows
+        <gene>|<cell_type>
+    columns
+        <feature>
+
+    Within each cell type:
+      - keep the same gene rows
+      - strip cell type from columns
+      - collapse duplicate base feature names by summing
+
+    Across cell types:
+      - stack row blocks
+      - outer join columns
+      - fill missing with zero
+    """
+    require_dataframe(df, "df")
+    out = df.copy()
+    out.index = out.index.astype(str)
+    out.columns = out.columns.astype(str)
+
+    row_is_tagged = _index_has_cell_type_tags(out.index, separator=separator)
+    if row_is_tagged:
+        raise ValueError(
+            "Input rows are already cell-type tagged. "
+            "_restack_column_tagged_matrix_to_row_tagged expects plain gene rows."
+        )
+
+    col_base, col_ct = _split_base_and_cell_type(out.columns, separator=separator)
+    col_ct_arr = np.asarray(col_ct, dtype=object)
+
+    cts = pd.Index([x for x in col_ct if x is not None]).unique()
+    if allowed_cell_types is not None:
+        allowed = pd.Index([str(x) for x in allowed_cell_types])
+        cts = cts.intersection(allowed)
+
+    if len(cts) == 0:
+        raise ValueError(
+            "No overlapping cell-type-tagged columns were found for restacking."
+        )
+
+    blocks: List[pd.DataFrame] = []
+
+    for ct in cts:
+        col_mask = col_ct_arr == ct
+        if col_mask.sum() == 0:
+            continue
+
+        sub = out.iloc[:, col_mask].copy()
+        sub.columns = col_base[col_mask]
+
+        # collapse duplicate feature base names within ct
+        if sub.columns.has_duplicates:
+            sub = sub.T.groupby(level=0, sort=False).sum().T
+
+        # convert row names from gene -> gene|ct
+        sub.index = pd.Index([f"{g}{separator}{ct}" for g in sub.index.astype(str)])
+
+        blocks.append(sub)
+
+    if len(blocks) == 0:
+        raise ValueError("No cell-type blocks could be constructed.")
+
+    stacked = pd.concat(blocks, axis=0, join="outer", sort=False).fillna(0.0)
+
+    if stacked.index.has_duplicates:
+        stacked = stacked.groupby(level=0, sort=False).sum()
+
+    if stacked.columns.has_duplicates:
+        stacked = stacked.T.groupby(level=0, sort=False).sum().T
+
+    return stacked
+
 
 def _index_has_cell_type_tags(index: Sequence[str], separator: str = "|") -> bool:
     idx = pd.Index([str(x) for x in index])
@@ -805,62 +922,56 @@ def _scored_enrichment_cell_type_aware(
     collapse_output: bool = True,
 ) -> Tuple[MatrixPair, pd.DataFrame]:
     """
-    Compute cell-type-aware scored enrichment and build storage-ready feature loadings.
+    Cell-type-aware scored enrichment for priors with:
 
-    Supported input structures
-    --------------------------
-    1. rows = <gene>,          columns = <feature>|<cell_type>
-    2. rows = <gene>|<cell_type>, columns = <feature>|<cell_type>
+    factor_weights
+        rows = factors
+        cols = genes
 
-    In both cases, enrichment is computed only between ontology factors and
-    modality feature columns whose cell-type tags match. When ``collapse_output``
-    is True, score columns are collapsed to plain feature names while the
-    returned feature-loading matrix preserves row-level cell-type identity as
-    ``<gene>|<cell_type>``.
+    modality_df
+        rows = genes
+        cols = feature|cell_type
+
+    Returns
+    -------
+    pair.score
+        factor x collapsed_feature
+    pair.pval
+        factor x collapsed_feature
+    feature_loadings
+        (gene|cell_type) x collapsed_feature
+        suitable for storage in .varm as feature x (gene|cell_type)
     """
-    factor_weights = require_dataframe(factor_weights, "factor_weights").copy()
-    modality_df = require_dataframe(modality_df, "modality_df").copy()
-    factor_meta = require_dataframe(factor_meta, "factor_meta").copy()
+    fw = ensure_no_nan(require_dataframe(factor_weights, "factor_weights"), "factor_weights")
+    md = ensure_no_nan(require_dataframe(modality_df, "modality_df"), "modality_df")
 
-    factor_weights.index = factor_weights.index.astype(str)
-    factor_weights.columns = factor_weights.columns.astype(str)
-    modality_df.index = modality_df.index.astype(str)
-    modality_df.columns = modality_df.columns.astype(str)
+    if "Classification" not in factor_meta.columns:
+        raise KeyError("factor_meta must contain a 'Classification' column.")
+
+    factor_meta = factor_meta.copy()
     factor_meta.index = factor_meta.index.astype(str)
+    factor_meta["Classification"] = factor_meta["Classification"].astype(str)
 
-    col_base, col_ct = _split_base_and_cell_type(modality_df.columns, separator=cell_type_separator)
-    col_ct_arr = np.asarray(col_ct, dtype=object)
+    fw.index = fw.index.astype(str)
+    fw.columns = fw.columns.astype(str)
+    md.index = md.index.astype(str)
+    md.columns = md.columns.astype(str)
 
-    row_is_tagged = _index_has_cell_type_tags(modality_df.index, separator=cell_type_separator)
-    if row_is_tagged:
-        row_base, row_ct = _split_base_and_cell_type(modality_df.index, separator=cell_type_separator)
-        row_ct_arr = np.asarray(row_ct, dtype=object)
-        row_cts = pd.Index([x for x in row_ct if x is not None]).unique()
-    else:
-        row_base = pd.Index(modality_df.index.astype(str), name=modality_df.index.name)
-        row_ct = pd.Index([None] * modality_df.shape[0], name="cell_type")
-        row_ct_arr = np.asarray(row_ct, dtype=object)
-        row_cts = pd.Index([], dtype=object)
-
-    factor_cts = pd.Index(factor_meta["Classification"].dropna().astype(str).unique())
-    col_cts = pd.Index([x for x in col_ct if x is not None]).unique()
-    common_cts = factor_cts.intersection(col_cts)
-    if row_is_tagged:
-        common_cts = common_cts.intersection(row_cts)
-
-    if len(common_cts) == 0:
+    if _index_has_cell_type_tags(md.index, separator=cell_type_separator):
         raise ValueError(
-            "No overlapping cell types were found across ontology factor metadata "
-            "and the supplied cell-type-aware modality labels."
+            "modality_df rows are already cell-type tagged, but this path expects plain gene rows."
         )
 
-    factor_classes = factor_meta["Classification"].astype(str)
+    col_base, col_ct = _split_base_and_cell_type(md.columns, separator=cell_type_separator)
+    col_ct_arr = np.asarray(col_ct, dtype=object)
+
+    cell_types = pd.Index(factor_meta["Classification"].dropna().astype(str).unique())
+
     score_blocks: List[pd.DataFrame] = []
     pval_blocks: List[pd.DataFrame] = []
-    feature_blocks: List[pd.DataFrame] = []
 
-    for ct in common_cts:
-        factor_idx = factor_meta.index[factor_classes == ct]
+    for ct in cell_types:
+        factor_idx = factor_meta.index[factor_meta["Classification"] == ct]
         if len(factor_idx) == 0:
             continue
 
@@ -868,85 +979,73 @@ def _scored_enrichment_cell_type_aware(
         if col_mask.sum() == 0:
             continue
 
-        if row_is_tagged:
-            row_mask = row_ct_arr == ct
-            if row_mask.sum() == 0:
-                continue
-            sub_raw = modality_df.iloc[row_mask, col_mask].copy()
-            sig = sub_raw.copy()
-            sig.index = row_base[row_mask]
-        else:
-            sub_raw = modality_df.loc[:, col_mask].copy()
-            sig = sub_raw.copy()
+        W_ct = fw.loc[factor_idx].copy()      # factors x genes
+        M_ct = md.iloc[:, col_mask].copy()    # genes x feature|ct
 
-        sig.columns = col_base[col_mask]
-        if sig.index.has_duplicates:
-            sig = sig.groupby(level=0, sort=False).sum()
-        if sig.columns.has_duplicates:
-            sig = sig.T.groupby(level=0, sort=False).sum().T
+        common_genes = W_ct.columns.intersection(M_ct.index)
+        if len(common_genes) == 0:
+            continue
+
+        W_ct = W_ct.loc[:, common_genes]
+        M_ct = M_ct.loc[common_genes]
 
         pair = calc_enrichment(
-            samples_by_genes=factor_weights.loc[factor_idx],
-            signatures=sig,
+            W_ct,
+            M_ct,
             n_iter=n_iter,
             seed=seed,
             show_progress=show_progress,
             progress_message=f"{progress_message} [{ct}]",
         )
 
-        if collapse_output:
-            pair.score.columns = pair.score.columns.astype(str)
-            pair.pval.columns = pair.pval.columns.astype(str)
-        else:
-            pair.score.columns = [f"{c}{cell_type_separator}{ct}" for c in pair.score.columns]
-            pair.pval.columns = [f"{c}{cell_type_separator}{ct}" for c in pair.pval.columns]
+        # collapse feature names within ct block
+        pair.score.columns = col_base[col_mask]
+        pair.pval.columns = col_base[col_mask]
+
+        if pair.score.columns.has_duplicates:
+            pair.score = pair.score.T.groupby(level=0, sort=False).sum().T
+            pair.pval = pair.pval.T.groupby(level=0, sort=False).min().T
 
         score_blocks.append(pair.score)
         pval_blocks.append(pair.pval)
 
-        if collapse_output:
-            if row_is_tagged:
-                feat = _collapse_cell_type_tagged_matrix(
-                    sub_raw,
-                    separator=cell_type_separator,
-                    allowed_cell_types=[ct],
-                )
-            else:
-                feat = _collapse_column_cell_type_tagged_matrix_preserve_rows(
-                    sub_raw,
-                    separator=cell_type_separator,
-                    allowed_cell_types=[ct],
-                )
-        else:
-            feat = sub_raw.copy()
-            if row_is_tagged:
-                feat.index = pd.Index([f"{g}{cell_type_separator}{ct}" for g in row_base[row_mask]], name=feat.index.name)
-            else:
-                feat.index = pd.Index([f"{g}{cell_type_separator}{ct}" for g in feat.index], name=feat.index.name)
-            feat.columns = pd.Index([f"{c}{cell_type_separator}{ct}" for c in col_base[col_mask]], name=feat.columns.name)
-            if feat.index.has_duplicates:
-                feat = feat.groupby(level=0, sort=False).sum()
-            if feat.columns.has_duplicates:
-                feat = feat.T.groupby(level=0, sort=False).sum().T
-
-        feature_blocks.append(feat)
-
     if len(score_blocks) == 0:
-        raise ValueError("No scored cell-type-aware enrichments were produced.")
+        raise ValueError(
+            "No cell-type-aware scored enrichment blocks were produced. "
+            "Check that modality columns end with '|<cell_type>' matching factor classifications."
+        )
 
-    all_features = _unique_preserve_order([c for df in score_blocks for c in df.columns])
-    score_df = pd.concat([df.reindex(columns=all_features) for df in score_blocks], axis=0)
-    pval_df = pd.concat([df.reindex(columns=all_features) for df in pval_blocks], axis=0)
+    # preserve first-seen feature order
+    feature_order = []
+    seen = set()
+    for df in score_blocks:
+        for c in df.columns:
+            if c not in seen:
+                seen.add(c)
+                feature_order.append(c)
+    feature_order = pd.Index(feature_order)
 
-    score_df = score_df.reindex(index=factor_weights.index, columns=all_features)
-    pval_df = pval_df.reindex(index=factor_weights.index, columns=all_features)
+    score_df = pd.concat(
+        [df.reindex(columns=feature_order) for df in score_blocks],
+        axis=0,
+        sort=False,
+    ).reindex(index=fw.index, columns=feature_order)
 
-    feature_loadings = pd.concat(feature_blocks, axis=0, join="outer", sort=False).fillna(0.0)
-    if feature_loadings.index.has_duplicates:
-        feature_loadings = feature_loadings.groupby(level=0, sort=False).sum()
-    if feature_loadings.columns.has_duplicates:
-        feature_loadings = feature_loadings.T.groupby(level=0, sort=False).sum().T
-    feature_loadings = feature_loadings.reindex(columns=score_df.columns).fillna(0.0)
+    pval_df = pd.concat(
+        [df.reindex(columns=feature_order) for df in pval_blocks],
+        axis=0,
+        sort=False,
+    ).reindex(index=fw.index, columns=feature_order)
+
+    # key fix: preserve cell-type-specific gene loadings by restacking rows
+    feature_loadings = _restack_column_tagged_matrix_to_row_tagged(
+        md,
+        separator=cell_type_separator,
+        allowed_cell_types=cell_types,
+    )
+
+    # align to collapsed modality features
+    feature_loadings = feature_loadings.reindex(columns=feature_order).fillna(0.0)
 
     return MatrixPair(score=score_df, pval=pval_df), feature_loadings
 
@@ -1039,7 +1138,7 @@ def add_modality(
         }
         perm_kwargs.update(permutation_kwargs)
         perm_progress_message = perm_kwargs.pop("progress_message", f"Permuting for '{modality_name}'...")
-
+        
         inferred_feature_loadings: Optional[pd.DataFrame] = None
         if scored_cell_type_aware:
             pair, inferred_feature_loadings = _scored_enrichment_cell_type_aware(
@@ -1053,6 +1152,8 @@ def add_modality(
             )
             score_df = pair.score
             pval_df = pair.pval
+            if feature_loadings is None:
+                feature_loadings = inferred_feature_loadings
         else:
             pair = calc_enrichment(
                 samples_by_genes=factor_weights,
@@ -1537,80 +1638,73 @@ def modality_feature_loadings_to_df(
     modality: str,
     key: Optional[str] = None,
     cell_types: Optional[Union[str, Sequence[str]]] = None,
-    strip_cell_type_suffix: Optional[bool] = None,
+    separator: str = "|",
 ) -> pd.DataFrame:
-    """Return a modality loading matrix as a DataFrame.
+    if modality not in ontology.mod:
+        raise KeyError(f"Modality '{modality}' not found in ontology.mod.")
 
-    Supports both legacy per-cell-type ``varm`` storage and the newer single-key
-    storage scheme in which row names can themselves be cell-type tagged as
-    ``<gene>|<cell_type>``.
-    """
     mod = ontology.mod[modality]
-    varm_keys = list(mod.varm.keys())
-    if len(varm_keys) == 0:
-        raise KeyError(f"No varm matrices found for modality '{modality}'.")
 
-    default_key = mod.uns.get("feature_loading_key_default")
-    if key is None and default_key in varm_keys:
-        key = str(default_key)
-    if key is None and len(varm_keys) == 1:
-        key = varm_keys[0]
+    if key is None:
+        key = mod.uns.get("feature_loading_key_default", None)
+        if key is None:
+            if len(mod.varm.keys()) == 1:
+                key = list(mod.varm.keys())[0]
+            else:
+                raise KeyError(
+                    f"No key provided and no unique default feature loading key found for modality '{modality}'. "
+                    f"Available keys: {list(mod.varm.keys())}"
+                )
 
-    ct_list = _normalize_cell_types(cell_types)
-    separator = str(mod.uns.get("cell_type_separator", "|"))
-
-    def _matrix_to_df(varm_key: str) -> pd.DataFrame:
-        gene_names = mod.uns.get("gene_names", ontology.uns.get("gene_names"))
-        if gene_names is None:
-            raise KeyError(f"No gene names stored for modality '{modality}'.")
-        arr = as_dense(mod.varm[varm_key])
-        return pd.DataFrame(
-            arr.T,
-            index=pd.Index(list(map(str, gene_names)), name="gene"),
-            columns=mod.var_names,
+    if key not in mod.varm:
+        raise KeyError(
+            f"Feature loading key '{key}' not found in ontology.mod['{modality}'].varm. "
+            f"Available keys: {list(mod.varm.keys())}"
         )
 
-    if key is not None:
-        if key not in varm_keys:
-            raise KeyError(f"varm key '{key}' not found for modality '{modality}'.")
-        df = _matrix_to_df(key)
+    if "gene_names" not in mod.uns:
+        raise KeyError(
+            f"ontology.mod['{modality}'].uns['gene_names'] not found; cannot reconstruct feature loading DataFrame."
+        )
+
+    row_names = pd.Index([str(x) for x in mod.uns["gene_names"]], name="feature_loading_row")
+    arr = as_dense(mod.varm[key])  # feature x loading_row
+
+    if arr.shape[0] != mod.n_vars:
+        raise ValueError(
+            f"varm['{key}'] row count ({arr.shape[0]}) does not match modality n_vars ({mod.n_vars})."
+        )
+    if arr.shape[1] != len(row_names):
+        raise ValueError(
+            f"varm['{key}'] column count ({arr.shape[1]}) does not match len(gene_names) ({len(row_names)})."
+        )
+
+    df = pd.DataFrame(
+        arr.T,
+        index=row_names,
+        columns=mod.var_names.astype(str),
+    )
+
+    if cell_types is None:
+        return df
+
+    if isinstance(cell_types, str):
+        keep_cts = {str(cell_types)}
+        single = True
     else:
-        selected_keys: List[str] = []
-        if ct_list is None:
-            selected_keys = list(varm_keys)
-        else:
-            for ct in ct_list:
-                selected_keys.extend([k for k in varm_keys if str(k).startswith(f"{ct}_")])
-            if len(selected_keys) == 0:
-                selected_keys = list(varm_keys)
+        keep_cts = {str(x) for x in cell_types}
+        single = len(keep_cts) == 1
 
-        selected_keys = list(_unique_preserve_order(selected_keys))
-        if len(selected_keys) == 1:
-            df = _matrix_to_df(selected_keys[0])
-        else:
-            dfs = []
-            for varm_key in selected_keys:
-                part = _matrix_to_df(varm_key)
-                suffix = str(varm_key).split("_", 1)[0] if "_" in str(varm_key) else str(varm_key)
-                part.columns = [f"{c}|{suffix}" for c in part.columns]
-                dfs.append(part)
-            df = pd.concat(dfs, axis=1)
+    base, ct = _split_base_and_cell_type(df.index.astype(str), separator=separator)
+    ct_arr = np.asarray(ct, dtype=object)
+    mask = pd.Index(ct_arr).isin(keep_cts)
 
-    row_axis = str(mod.uns.get("feature_loading_row_axis", "gene"))
-    row_is_tagged = row_axis == "gene|cell_type" or _index_has_cell_type_tags(df.index, separator=separator)
+    out = df.loc[mask].copy()
 
-    if ct_list is not None and row_is_tagged:
-        row_base, row_ct = _split_base_and_cell_type(df.index, separator=separator)
-        mask = pd.Index([str(x) if x is not None else None for x in row_ct]).isin(ct_list)
-        df = df.loc[mask].copy()
-        if strip_cell_type_suffix is None:
-            strip_cell_type_suffix = len(ct_list) == 1
-        if strip_cell_type_suffix and len(ct_list) == 1:
-            df.index = row_base[mask]
-            if df.index.has_duplicates:
-                df = df.groupby(level=0, sort=False).sum()
+    if single:
+        out.index = base[mask]
 
-    return df
+    return out
 
 
 def get_factor_scores(ontology: mu.MuData, factors: Optional[Sequence[str]] = None, modalities: Optional[Sequence[str]] = None, cell_types: Optional[Union[str, Sequence[str]]] = None) -> Dict[str, pd.DataFrame]:
