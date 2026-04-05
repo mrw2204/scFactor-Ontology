@@ -10,7 +10,7 @@ from .core import (
     make_factor_gene_salience,
     make_filtered_lr_signatures,
     make_ontology,
-    add_modality
+    add_modality,
     factor_weights_to_df,
     modality_feature_loadings_to_df,
     modality_pvals_to_df,
