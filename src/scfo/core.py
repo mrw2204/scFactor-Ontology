@@ -1236,6 +1236,7 @@ def make_ontology(
     factor_metadata: Optional[pd.DataFrame] = None,
     cell_type_separator: str = "|",
     scored_modalities: Optional[Mapping[str, pd.DataFrame]] = None,
+    scored_modalities_ct_aware: Optional[Mapping[str, pd.DataFrame]] = None,
     gene_set_modalities: Optional[Mapping[str, Union[Mapping[str, Sequence[str]], str]]] = None,
     scored_feature_loadings: Optional[Mapping[str, Optional[pd.DataFrame]]] = None,
     feature_loading_key_map: Optional[Mapping[str, str]] = None,
@@ -1294,6 +1295,11 @@ def make_ontology(
         value must be a DataFrame with rows corresponding to genes and columns
         corresponding to modality features or signatures. Each scored modality
         is processed in a cell-type-agnostic fashion by default.
+    scored_modalities_ct_aware
+        Optional mapping from modality name to a scored modality matrix in cell 
+        type-aware mode. Each value must be a DataFrame with rows corresponding 
+        to genes and columns corresponding to modality features or signatures, 
+        with cell type as a suffix matching factor name cell type labels. 
     gene_set_modalities
         Optional mapping from modality name to an unranked gene-set collection.
         Each value may be either a mapping of gene-set names to gene lists or a
@@ -1468,6 +1474,16 @@ def make_ontology(
     ontology.uns["factor_type"] = factor_type
     ontology.uns["modality_names"] = list(modalities.keys())
 
+    for key in scored_modalities_ct_aware.keys():
+        add_modality(
+            ontology,
+            modality_name=key,
+            modality_data=scored_modalities_ct_aware[key],
+            modality_type="scored",
+            scored_cell_type_aware=True,
+            n_iter=n_iter
+        )
+    
     return ontology
 
 
