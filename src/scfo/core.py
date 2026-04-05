@@ -575,7 +575,7 @@ def add_modality(
     modality_uns: Optional[Mapping[str, Any]] = None,
     n_iter: int = 1000,
     seed: int = 0,
-    show_progress: bool = False,
+    show_progress: bool = True,
     permutation_kwargs: Optional[Mapping[str, Any]] = None,
     gsea_kwargs: Optional[Mapping[str, Any]] = None,
     store_input_as_feature_loadings: bool = True,
@@ -869,6 +869,7 @@ def make_ontology(
     gene_set_modality_uns: Optional[Mapping[str, Mapping[str, Any]]] = None,
     n_iter: int = 1000,
     seed: int = 0,
+    show_progress = True,
 ) -> mu.MuData:
     """
     Construct a factor-centric ontology object from factor loadings and a set of
@@ -988,7 +989,7 @@ def make_ontology(
             signatures=modality_df,
             n_iter=n_iter,
             seed=seed,
-            show_progress=False,
+            show_progress=show_progress,
         )
 
         feat = scored_feature_loadings.get(modality_name)
