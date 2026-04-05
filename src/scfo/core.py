@@ -965,7 +965,7 @@ def make_ontology(
 
     factor_meta["FactorType"] = factor_type
 
-    ontology = mu.MuData()
+    ontology = mu.MuData({})
     ontology.obs = factor_meta.copy()
     ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
     ontology.uns["gene_names"] = list(fl.index.astype(str))
