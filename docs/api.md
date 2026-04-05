@@ -5,6 +5,7 @@ This page documents the public Python API for `scfo`.
 ## Ontology construction
 
 ::: scfo.make_ontology
+::: scfo.add_modality
 ::: scfo.make_filtered_lr_signatures
 ::: scfo.regulon_enrichment
 ::: scfo.gsea_enrichment
