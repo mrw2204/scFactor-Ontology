@@ -1689,7 +1689,7 @@ def make_ontology(
 
     ontology = mu.MuData(modalities)
     ontology.obs = factor_meta.copy()
-    ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
+    #ontology.obsm["weights"] = as_csr(fl.T.to_numpy(dtype=np.float32))
     ontology.uns["gene_names"] = list(fl.index.astype(str))
     ontology.uns["factor_type"] = factor_type
     ontology.uns["modality_names"] = list(modalities.keys())
@@ -1822,16 +1822,12 @@ def factor_weights_to_df(ontology: mu.MuData, transpose: bool = False, cell_type
     pandas.DataFrame
         DataFrame representation of ``ontology.obsm['weights']``.
     """
-    if "weights" not in ontology.obsm:
+    if "weights" not in list(ontology.mod.keys()):
         raise KeyError("ontology.obsm['weights'] not found.")
     if "gene_names" not in ontology.uns:
         raise KeyError("ontology.uns['gene_names'] not found.")
 
-    weights = pd.DataFrame(
-        as_dense(ontology.obsm["weights"]),
-        index=ontology.obs_names,
-        columns=pd.Index(list(map(str, ontology.uns["gene_names"])), name="gene"),
-    )
+    weights = ontology.mod['weights'].to_df()
     weights.index.name = "factor"
     keep = _filter_factor_index_by_cell_types(weights.index, ontology, cell_types)
     weights = weights.loc[keep].copy()
@@ -2032,15 +2028,11 @@ def top_features_for_factor(ontology: mu.MuData, factor: str, modality: str, n_p
         store p-values; ignored for ``modality='weights'``.
     """
     if modality == "weights":
-        if "weights" not in ontology.obsm:
+        if "weights" not in list(ontology.mod.keys()):
             raise KeyError("ontology.obsm['weights'] not found.")
         if "gene_names" not in ontology.uns:
             raise KeyError("ontology.uns['gene_names'] not found.")
-        weights = pd.DataFrame(
-            as_dense(ontology.obsm["weights"]),
-            index=ontology.obs_names,
-            columns=pd.Index(ontology.uns["gene_names"], name="gene"),
-        )
+        weights = ontology.mod['weights'].to_df()
         if factor not in weights.index:
             raise KeyError(f"Factor '{factor}' not found in ontology weights.")
         row = pd.DataFrame({"feature": weights.columns, "score": weights.loc[factor].values})
