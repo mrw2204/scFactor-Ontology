@@ -1,4 +1,33 @@
 site_name: scFactor-Ontology
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocs-jupyter:
+      execute: false
+      ignore_h1_titles: false
+      include_source: true
+      show_input: true
+      no_input: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - scFO quickstart: tutorials/scfo_quickstart.ipynb
+
+site_name: scFactor-Ontology
 site_url: https://scfactor-ontology.readthedocs.io/en/latest/
 repo_url: https://github.com/mrw2204/scFactor-Ontology
 repo_name: mrw2204/scFactor-Ontology
@@ -18,9 +47,18 @@ nav:
   - Home: index.md
   - Vignette: vignette.md
   - API: api.md
+  - Tutorials:
+      - Overview: index.md
+      - scFO quickstart: scFO Tutorial_construction and viz.ipynb
 
 plugins:
   - search
+  - mkdocs-jupyter:
+      execute: false
+      ignore_h1_titles: false
+      include_source: true
+      show_input: true
+      no_input: false
   - mkdocstrings:
       handlers:
         python:
@@ -44,3 +82,5 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight
   - pymdownx.inlinehilite
+  - pymdownx.details
+  - md_in_html
