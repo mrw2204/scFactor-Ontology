@@ -3,3 +3,4 @@ mkdocs-material
 mkdocstrings[python]>=0.30
 mkdocstrings-python>=2.0.3
 griffe>=2.0.2
+mkdocs-jupyter
