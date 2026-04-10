@@ -25,6 +25,7 @@ nav:
       - Tutorial 4 - Spatial: Tutorial_4_Spatial.ipynb
       - Tutorial 5 - scHPF: Tutorial_5_scHPF.ipynb
       - Tutorial 6 - LGG: Tutorial_6_LGG.ipynb
+      - Tutorial 6 - Perturbation: Tutorial_7_Perturbation.ipynb
 
 plugins:
   - search
