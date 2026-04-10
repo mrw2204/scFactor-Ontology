@@ -94,11 +94,11 @@ def diff_exp_ontology(
             raise KeyError(f"Missing pseudo_bulk_by/groupby columns in adata.obs: {missing}")
         grouped = score_df.join(adata.obs[agg_keys]).groupby(agg_keys, dropna=False)
         if summary_metric == "mean":
-            agg = grouped.mean(numeric_only=True)
+            agg = grouped.mean(numeric_only=True).dropna(how = 'all', axis = 0)
         elif summary_metric == "median":
-            agg = grouped.median(numeric_only=True)
+            agg = grouped.median(numeric_only=True).dropna(how = 'all', axis = 0)
         elif summary_metric == "sum":
-            agg = grouped.sum(numeric_only=True)
+            agg = grouped.sum(numeric_only=True).dropna(how = 'all', axis = 0)
         else:
             raise ValueError("summary_metric must be 'mean', 'median', or 'sum'.")
         obs_pb = agg.index.to_frame(index=False)
