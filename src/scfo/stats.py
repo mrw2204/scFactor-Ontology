@@ -38,6 +38,7 @@ def diff_exp_ontology(
     adata: ad.AnnData,
     ontology_keys: Union[str, Sequence[str]],
     groupby: str,
+    reference: str = "rest",
     method: str = "wilcoxon",
     pseudo_bulk: bool = False,
     pseudo_bulk_by: Optional[Union[str, Sequence[str]]] = None,
@@ -58,6 +59,9 @@ def diff_exp_ontology(
         Column in ``adata.obs`` defining the groups to compare.
     method : str, default="wilcoxon"
         Method passed to :func:`scanpy.tl.rank_genes_groups`.
+    reference : str, default="rest"
+        Group to compare to in :func:`scanpy.tl.rank_genes_groups`. Default "rest" does
+        one-vs-all comparison.
     pseudo_bulk : bool, default=False
         Whether to aggregate scores before testing.
     pseudo_bulk_by : str or sequence of str, optional
@@ -104,7 +108,7 @@ def diff_exp_ontology(
     else:
         obs_sc = adata.obs[[groupby]].copy()
         test_adata = ad.AnnData(X=score_df.to_numpy(dtype=np.float32), obs=obs_sc, var=pd.DataFrame(index=score_df.columns))
-    sc.tl.rank_genes_groups(test_adata, groupby=groupby, method=method, key_added=key_added)
+    sc.tl.rank_genes_groups(test_adata, groupby=groupby, method=method, key_added=key_added, reference=reference)
     res = sc.get.rank_genes_groups_df(test_adata, group=None, key=key_added)
     if pval_thresh is not None and "pvals_adj" in res.columns:
         res = res.loc[res["pvals_adj"] < pval_thresh].copy()
