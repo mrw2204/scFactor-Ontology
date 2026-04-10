@@ -39,32 +39,6 @@ cd scFactor-Ontology
 pip install -e .
 ```
 
-## Quickstart
-
-```python
-from scfo import make_ontology, project_ontology
-
-ontology = make_ontology(
-    factor_loadings=factor_loadings.fillna(0),
-    regulon_loadings=regulon_loadings.fillna(0),
-    hallmark_lib=hallmark_lib_dict,
-    gene_sets=gene_sets_dict,
-    liana=liana,
-    n_iter=1000,
-)
-
-project_ontology(
-    adata=adata_external,
-    ontology=ontology,
-    annotation_key="final_annotation_fine",
-    score_key_added="ontology_scores",
-    pval_key_added="ontology_pvals",
-    method="permutation",
-    n_iter=1000,
-    inplace=True,
-)
-```
-
 ## Core concepts
 
 ### Factor-centric ontology object
@@ -103,7 +77,7 @@ IRF1(+)|Endothelial
 
 ## Documentation
 
-- **Vignette**: end-to-end workflow and examples
+- **Tutorials**: end-to-end workflows and examples
 - **API**: function reference with parameters and return values
 
 ## Notes on signatures
