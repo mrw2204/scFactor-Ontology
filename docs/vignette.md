@@ -1,6 +1,6 @@
-# scFactor-Ontology vignette
+# scFactor-Ontology Methodology Overview
 
-This vignette shows a typical end-to-end workflow for `scfo` using:
+This page shows a broad overview of a typical end-to-end workflow for `scfo` using:
 
 - `factor_loadings`: gene-by-factor loading matrix
 - `hallmark_lib_dict` and `gene_sets_dict`: dictionaries of MSigDB Hallmark gene sets or user-defined gene sets (unranked lists)
@@ -425,52 +425,3 @@ ontology2 = load_ontology_excel(
     features_xlsx="gbm_ontology_features.xlsx",
 )
 ```
-
-## End-to-end example
-
-```python
-ontology = make_ontology(
-    factor_loadings=factor_loadings.fillna(0),
-    regulon_loadings=regulon_loadings.fillna(0),
-    liana=liana,
-    hallmark_lib=hallmark_lib_dict,
-    gene_sets=gene_sets_dict,
-    n_iter=1000,
-)
-
-project_ontology(
-    adata=adata_external,
-    ontology=ontology,
-    annotation_key="final_annotation_fine",
-    score_key_added="ontology_scores",
-    pval_key_added="ontology_pvals",
-    method="permutation",
-    n_iter=1000,
-    inplace=True,
-)
-
-_, de_results = diff_exp_ontology(
-    adata=adata_external,
-    ontology_keys="ontology_scores",
-    groupby="Status",
-    method="wilcoxon",
-    pseudo_bulk=True,
-    pseudo_bulk_by=["Patient_Study"],
-    summary_metric="mean",
-)
-
-sig_results = signature_enrichment(
-    signature=["CEBPB", "LGALS3", "JUNB"],
-    ontology=ontology,
-    search_in=["weights", "regulons", "liana_ligand"],
-    cell_types=["Tumor", "Mo_TAM"],
-)
-
-paths = export_ontology_excel(
-    ontology=ontology,
-    outdir=".",
-    prefix="gbm_ontology",
-)
-```
-
-
