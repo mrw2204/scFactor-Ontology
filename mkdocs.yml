@@ -19,8 +19,8 @@ nav:
   - Vignette: vignette.md
   - API: api.md
   - Tutorials:
-      - Overview: index.md
-      - scFO quickstart: scFO Tutorial_construction and viz.ipynb
+      - scFO object construction: Tutorial_1_Construction.ipynb
+      - scFO visualization: Tutorial_2_Visualization.ipynb
 
 plugins:
   - search
