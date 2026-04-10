@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from pathlib import Path
+from typing import Optional, Sequence, Tuple, Union, Any
 
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib import colors
 
 from .core import (
     modality_feature_loadings_to_df,
@@ -297,17 +300,6 @@ def plot_modality_feature_top_items(
     if path is not None:
         fig.savefig(path)
     return fig, ax
-
-
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Optional, Sequence, Tuple, Union, Any
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib import colors
 
 
 def _matrix_to_dataframe(
