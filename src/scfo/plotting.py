@@ -770,7 +770,11 @@ def plot_factor_effect_sizes(
                 )
 
     if strip_cell_type_from_labels:
-        yticklabels = [f.removesuffix(f"|{cell_type}") for f in selected_factors]
+        suffix = f"|{cell_type}"
+        yticklabels = [
+            f[:-len(suffix)] if f.endswith(suffix) else f
+            for f in selected_factors
+        ]
     else:
         yticklabels = selected_factors
 
