@@ -22,7 +22,7 @@ from .core import (
 from .projection import project_ontology, signature_enrichment, collapse_projected_ontology_scores
 from .stats import collect_score_matrices, diff_exp_ontology
 from .io import export_ontology_excel, load_ontology_excel
-from .plotting import plot_factor_top_features, plot_modality_feature_top_items
+from .plotting import plot_factor_top_features, plot_modality_feature_top_items, plot_factor_effect_sizes
 
 __all__ = [
     "DEFAULT_CELL_TYPES",
@@ -51,4 +51,5 @@ __all__ = [
     "plot_factor_top_features",
     "plot_modality_feature_top_items",
     "collapse_projected_ontology_scores",
+    "plot_factor_effect_sizes"
 ]
