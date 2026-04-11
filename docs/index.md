@@ -1,60 +1,51 @@
 # scFactor-Ontology
 
-`scfo` is a Python package for building, querying, projecting, and visualizing **factor-centric ontology resources** from single-cell transcriptomic analyses. This framework helps organize, visualize, interpret, and externally implement feature-level prior knowledge derived from large single cell atlases. 
+`scfo` is a Python package for working with latent factors (gene x factor matrices with per-gene loadings) derived from single-cell transcriptomic analyses. 
 
-The package is designed for workflows in which a matrix of **gene-by-factor loadings** is treated as a reusable biological reference and augmented with additional annotation modalities such as:
-
-- transcription factor regulons
-- ligand–receptor communication signatures
-- curated pathway or gene-set annotations
-- projection scores in external single-cell datasets
-
-Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
-
-**To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
+## What is an `scfo ontology` object?
+`scfo` was built as a tool to organize latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. The data structure of an `scfo ontology` object is based on `muon MuData`, the multi-modal extension of `AnnData`, treating factors as observations in `.obs`. This allows for easy storage of factor loadings and prior-knowledge annotation data as separate `MuData` modalities. Typical factor-wise enrichment score modalities stored in `scfo ontology` objects may include transcription factor regulons, ligand-receptor communication signatures, gene set enrichment analyses (e.g. MSigDB Hallmark Gene Ontology), etc. 
 
 ## What can scFO do?
+The centralized, organized design of `scfo` streamlines many downstream analyses that are commonly performed to interpret latent factors. `scfo` functionality includes:
+- ***de novo* calculation** of enrichment scores based on feature loadings (e.g. gene-wise regulon matrices)
+- **plotting suite** for visualization of factor loadings/feature loadings/enrichment scores
+- **querying** an `scfo ontology` for genes/sets of interest
+- **projecting* an `scfo ontology` onto external `AnnData` objects (e.g. perturbational data).
+- **exporting and reloading** 'ontology' objects as `.h5mu` or as standardized Excel workbooks
 
-With `scfo`, you can:
+## How do I use scFO?
+See **"Installation and Usage"** below for quick-start instructions, and the **"scFO Overview + General Workflow"** page (under Tutorials) for a high-level vignette.
 
-- **build an ontology** from factor loadings plus optional gene set, regulon and ligand–receptor inputs
-- **inspect and visualize** factor weights, modality enrichments, and feature loadings
-- **project ontology factors** onto external `AnnData` objects
-- **test ontology scores** between biological groups at single-cell or pseudobulk level
-- **query the ontology** with:
-  - a curated unordered gene set
-  - a weighted genome-wide signature
-  - visualizaiton of modality enrichment
-- **export and reload** ontology objects through standardized Excel workbooks
+This ReadTheDocs site also includes detailed tutorials for using specific `scfo` functionalities. First, decide between the following:
+- **If you have new factors and prior knowledge loadings:** see Tutorials #1, #5, and #6 to learn how to construct your factor `scfo ontology`.
+- **If you want to use a pre-existing `scfo ontology`:** see Tutorials #2, #3, #4, and #7 to learn how to use the `scfo ontology` to visualize factors/loadings (#2), add new modalities (#4), and project factor scores onto external data (#3 and #7).
 
-## Installation
+## Do `scfo ontology` objects already exist that I can download?
+Yes! We have generated `scfo ontology` objects for general use by the neuro-oncology community, representing cell type-specific latent factors from 1) a 3.3 million-cell atlas of human glioblastoma (GBM), and 2) a 400,000-cell atlas of human low grade gliomas (LGG). 
+- Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
+- **To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
+
+## Installation and Usage:
 
 ### From GitHub
-
 ```bash
 pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
 ```
 
 ### Development install
-
 ```bash
 git clone https://github.com/mrw2204/scFactor-Ontology.git
 cd scFactor-Ontology
 pip install -e .
 ```
 
-## Core concepts
-
 ### Factor-centric ontology object
-
 `make_ontology()` returns a factor-centric `MuData` object:
-
 - `ontology.obs` = factor metadata
-- `ontology.obsm["weights"]` = global factor weight matrix
+- `ontology.mod["weights"]` = global factor weight matrix
 - `ontology.mod[...]` = modality-specific enrichment matrices
 
-### Expected input formats
-
+### Expected input formats for common modalities:
 - `factor_loadings`: **genes x factors**
 - `regulon_loadings`: **genes x regulons**
 - `hallmark_lib_dict` and `gene_sets_dict`: **dictionaries of gene sets (unranked lists)**
@@ -62,17 +53,13 @@ pip install -e .
 - external projections: `AnnData` with genes in `adata.var_names`
 
 ### Naming conventions
-
 The package works best when factor names follow:
-
 ```text
 Factor0|Tumor
 Factor1|Tumor
 Factor0|Mo_TAM
 ```
-
 For lineage-specific regulons, use columns like:
-
 ```text
 CEBPB(+)|Tumor
 STAT3(+)|Mo_TAM
@@ -80,35 +67,5 @@ IRF1(+)|Endothelial
 ```
 
 ## Documentation
-
 - **Tutorials**: end-to-end workflows and examples
 - **API**: function reference with parameters and return values
-
-## Notes on signatures
-
-`signature_enrichment()` supports two query modes:
-
-- **unordered gene list** → scored with **GSEA**
-- **weighted `pandas.Series` or one-column `DataFrame`** → scored with the **permutation test**
-
-The same function can query:
-
-- global factor weights
-- any ontology modality
-- or both together using `search_in`
-
-## Notes on LIANA
-
-The package builds LIANA-derived ontology modalities from the original paired-signature logic:
-
-- ligand-side rows: `sender_cell_type|ligand_gene`, columns: `rec by|receiver_cell_type`
-- receptor-side rows: `receiver_cell_type|receptor_gene`, columns: `sent by|sender_cell_type`
-
-During ontology assembly, each factor is enriched only against the matching lineage-specific signature block. The final `liana_ligand` and `liana_receptor` modalities therefore expose the **shared pair-wise sender/receiver columns**, while lineage-specific signature definitions are preserved in `varm`.
-
-## Recent changes
-
-- `signature_enrichment()` now uses `search_in` as the sole target selector
-- helper functions support `cell_types=` filtering
-- plotting helpers support both factor-centric and modality-centric views
-
