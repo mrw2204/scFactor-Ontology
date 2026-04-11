@@ -3,6 +3,9 @@
 
 Portable utilities for building, querying, projecting, and exporting **factor-centric ontology resources** from gene-by-factor loading matrices.
 
+Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
+**To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
+
 ## Main functionality
 
 - Build a factor-centric `MuData` ontology from:
