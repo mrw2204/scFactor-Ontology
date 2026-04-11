@@ -24,7 +24,7 @@ The centralized, organized design of `scfo` streamlines many common downstream a
 - **plotting suite** for visualization of factor loadings/feature loadings/enrichment scores
 - **querying** an `scfo ontology` for genes/sets of interest
 - **projecting** an `scfo ontology` onto external `AnnData` objects (e.g. perturbational data).
-- **exporting and reloading** 'ontology' objects as `.h5mu` or as standardized Excel workbooks
+- **exporting and reloading** `scfo ontology` objects as `.h5mu` or as standardized Excel workbooks
 
 ### How do I use scFO?
 See **"Installation and Usage"** below for quick-start instructions, and the **"scFO Overview + General Workflow"** page (under Tutorials) for a high-level vignette.
