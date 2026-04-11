@@ -3,14 +3,18 @@
 `scfo` is a Python package for working with latent factors (gene x factor matrices with per-gene loadings) derived from single-cell transcriptomic analyses. 
 
 ## What is an `scfo ontology` object?
-`scfo` was built as a tool to organize latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. The data structure of an `scfo ontology` object is based on `muon MuData`, the multi-modal extension of `AnnData`, treating factors as observations in `.obs`. This allows for easy storage of factor loadings and prior-knowledge annotation data as separate `MuData` modalities. Typical factor-wise enrichment score modalities stored in `scfo ontology` objects may include transcription factor regulons, ligand-receptor communication signatures, gene set enrichment analyses (e.g. MSigDB Hallmark Gene Ontology), etc. 
+`scfo` was built as a tool to organize latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. 
+
+The data structure of an `scfo ontology` object is based on `muon MuData`, the multi-modal extension of `AnnData`, treating factors as observations in `.obs`. This allows for easy storage of factor loadings and prior-knowledge annotation data as separate `MuData` modalities. 
+
+Typical factor-wise enrichment score modalities stored in `scfo ontology` objects may include transcription factor regulons, ligand-receptor communication signatures, gene set enrichment analyses (e.g. MSigDB Hallmark Gene Ontology), etc. 
 
 ## What can scFO do?
 The centralized, organized design of `scfo` streamlines many downstream analyses that are commonly performed to interpret latent factors. `scfo` functionality includes:
 - ***de novo* calculation** of enrichment scores based on feature loadings (e.g. gene-wise regulon matrices)
 - **plotting suite** for visualization of factor loadings/feature loadings/enrichment scores
 - **querying** an `scfo ontology` for genes/sets of interest
-- **projecting* an `scfo ontology` onto external `AnnData` objects (e.g. perturbational data).
+- **projecting** an `scfo ontology` onto external `AnnData` objects (e.g. perturbational data).
 - **exporting and reloading** 'ontology' objects as `.h5mu` or as standardized Excel workbooks
 
 ## How do I use scFO?
