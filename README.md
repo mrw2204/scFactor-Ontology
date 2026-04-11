@@ -4,7 +4,6 @@
 Portable utilities for building, querying, projecting, and exporting **factor-centric ontology resources** from gene-by-factor loading matrices.
 
 ## Main functionality
-
 - Build a factor-centric `MuData` ontology from:
   - factor loadings (`genes x factors`)
   - regulon loadings
@@ -17,15 +16,14 @@ Portable utilities for building, querying, projecting, and exporting **factor-ce
 - Plot top positive/negative features for a factor in any modality
 
 ## Install
-
 ```bash
 pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
 ```
 
+## How to use
 See `docs/vignette.md` for a full end-to-end example and ReadTheDocs for detailed tutorials: https://scfactor-ontology.readthedocs.io/en/latest/
 
 ## Example data (GBM and low-grade glioma ontologies):
-
 Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
 
 **To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
