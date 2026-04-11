@@ -34,7 +34,7 @@ Yes! We have generated `scfo ontology` objects for general use by the neuro-onco
 - Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
 - **To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
 
-## Installation and Usage:
+## Installation and Usage core concepts:
 
 ### From GitHub
 ```bash
@@ -54,7 +54,7 @@ pip install -e .
 - `ontology.mod["weights"]` = global factor weight matrix
 - `ontology.mod[...]` = modality-specific enrichment matrices
 
-### Expected input formats for common modalities:
+### Expected input formats for common modalities
 - `factor_loadings`: **genes x factors**
 - `regulon_loadings`: **genes x regulons**
 - `hallmark_lib_dict` and `gene_sets_dict`: **dictionaries of gene sets (unranked lists)**
