@@ -8,6 +8,10 @@ This page shows a broad overview of a typical end-to-end workflow for `scfo` usi
 - `liana`: raw long-form LIANA output
 - an external `AnnData` object for projection and downstream testing
 
+Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
+
+**To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
+
 ## Installation
 
 ```bash
