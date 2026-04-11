@@ -6,6 +6,7 @@
 - **Home (this page)**: conceptual overview of scFO and FAQ's 
 - **Tutorials**: end-to-end workflows and examples
 - **API**: function reference with parameters and return values
+- **GitHub repository**: https://github.com/mrw2204/scFactor-Ontology/tree/main
 
 ## What is an `scfo ontology` object?
 `scfo` was built as a tool to organize latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. 
