@@ -4,14 +4,14 @@
 
 ## Documentation
 
-- **Home (this page)**: conceptual overview of scFO and FAQ's 
-- **Tutorials**: end-to-end workflows and examples
+- **Home (this page)**: FAQ's and installation
+- **Tutorials**: conceptual overview, end-to-end workflows and examples
 - **API**: function reference with parameters and return values
 - **GitHub repository**: https://github.com/mrw2204/scFactor-Ontology/tree/main
 
 ## FAQ
 ### What is an `scfo ontology` object?
-`scfo` was built as a tool to organize latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. 
+`scfo` is a tool that organizes latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. 
 
 The data structure of an `scfo ontology` object is based on `muon MuData`, the multi-modal extension of `AnnData`, treating factors as observations in `.X` and `.obs`. This allows for easy storage of factor loadings (`obs` = factors x `var` = genes) and prior-knowledge annotation data (`obs` = factors x `var` = feature enrichment scores) as separate `MuData` modalities. 
 
