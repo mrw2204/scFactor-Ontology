@@ -23,14 +23,28 @@ def _make_fixed_panel_figure(
     panel_margins: Tuple[float, float, float, float] = (2.8, 0.35, 0.45, 0.55),
 ):
     """
-    Create a figure where `figsize` specifies the main plotting panel size only.
+    Create a matplotlib figure whose requested size refers only to the plotting panel.
+
+    This helper is useful when consistent inner panel dimensions are desired
+    across multiple figures, regardless of differences in axis labels, tick
+    labels, or titles. The total figure size is calculated by adding the
+    requested panel margins to the requested panel width and height, and the
+    main axes are positioned explicitly with ``fig.add_axes``.
 
     Parameters
     ----------
-    figsize
-        Width, height of the plotting panel in inches.
-    panel_margins
-        Margins around the panel in inches: (left, right, bottom, top).
+    figsize : tuple of float
+        Width and height of the main plotting panel, in inches.
+    panel_margins : tuple of float, default=(2.8, 0.35, 0.45, 0.55)
+        Margins around the panel, in inches, ordered as
+        ``(left, right, bottom, top)``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    ax : matplotlib.axes.Axes
+        The main axes occupying the requested panel area.
     """
     panel_w, panel_h = figsize
     left, right, bottom, top = panel_margins
@@ -55,7 +69,35 @@ def _resolve_xlim(
     xlim: Optional[Tuple[float, float]] = None,
     xpad_frac: float = 0.06,
 ) -> Tuple[float, float]:
-    """Resolve x-limits, ensuring some padding and inclusion of zero by default."""
+    """
+    Determine x-axis limits for a one-dimensional score vector.
+
+    When explicit limits are not provided, the function computes limits from the
+    observed score range, forces inclusion of zero, and adds symmetric padding
+    proportional to the total span. This is primarily used for bar plots where
+    both positive and negative values should be visually comparable around a
+    central zero line.
+
+    Parameters
+    ----------
+    scores : pandas.Series
+        Numeric values used to determine the plotting range.
+    xlim : tuple of float, optional
+        Explicit x-axis limits. If provided, these are returned unchanged.
+    xpad_frac : float, default=0.06
+        Fraction of the score span added as padding on each side when limits are
+        inferred automatically.
+
+    Returns
+    -------
+    tuple of float
+        Resolved ``(xmin, xmax)`` limits for plotting.
+
+    Notes
+    -----
+    If all values are identical, a fallback span based on the absolute value of
+    that constant score, or 1.0 if necessary, is used to avoid zero-width axes.
+    """
     if xlim is not None:
         return xlim
 
@@ -84,10 +126,40 @@ def _add_pvalue_labels_at_bar_base(
     pval_offset_frac: float = 0.015,
 ):
     """
-    Place p-value labels just across the zero line, at the base of each bar.
+    Add p-value labels near the zero line for horizontal bar plots.
 
-    Positive bars get labels just left of zero (right-justified).
-    Negative bars get labels just right of zero (left-justified).
+    For each row in ``df_plot``, the function places a formatted p-value label
+    just to the left or right of the zero line depending on the sign of the
+    corresponding score. This keeps the p-value annotation visually anchored at
+    the base of the bar rather than at the bar tip.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes containing the horizontal bars.
+    df_plot : pandas.DataFrame
+        Plotting DataFrame containing at least a ``"score"`` column and, if
+        available, a p-value column.
+    y_positions : sequence
+        Y coordinates corresponding to the rows of ``df_plot``.
+    pval_col : str, default="pval"
+        Column in ``df_plot`` containing p-values.
+    pval_fmt : str, default="p={:.1e}"
+        Format string used to render p-values.
+    pval_fontsize : float, default=8
+        Font size for p-value labels.
+    pval_offset_frac : float, default=0.015
+        Fraction of the current x-axis width used to offset labels from zero.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    Positive bars receive labels just left of zero with right alignment, while
+    negative bars receive labels just right of zero with left alignment.
+    Rows with missing p-values are skipped.
     """
     if pval_col not in df_plot.columns or not df_plot[pval_col].notna().any():
         return
@@ -121,7 +193,41 @@ def _add_pvalue_labels_at_bar_base(
 
 
 def _resolve_feature_column(df: pd.DataFrame, feature: str, cell_type: Optional[str] = None) -> str:
-    """Resolve a feature column name, allowing optional lineage-suffixed matches."""
+    """
+    Resolve a feature name to a unique column in a DataFrame.
+
+    This helper supports several matching strategies to accommodate ontology
+    modalities whose feature columns may be stored either as plain feature names
+    or as lineage-qualified labels such as ``feature|cell_type``.
+
+    Matching is attempted in the following order:
+
+    1. direct membership in ``df.columns``
+    2. exact string equality
+    3. exact lineage-qualified match using ``cell_type`` if provided
+    4. base-name match after splitting each column at the first ``"|"``
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame whose columns represent modality features.
+    feature : str
+        Requested feature name.
+    cell_type : str, optional
+        Optional lineage used to disambiguate feature names stored as
+        ``feature|cell_type``.
+
+    Returns
+    -------
+    str
+        The resolved column name in ``df``.
+
+    Raises
+    ------
+    KeyError
+        If the feature cannot be found, or if multiple base-name matches are
+        found and ``cell_type`` is insufficient to disambiguate.
+    """
     if feature in df.columns:
         return str(feature)
 
@@ -160,7 +266,60 @@ def plot_factor_top_features(
     pval_offset_frac: float = 0.015,
     path: Optional[str] = None,
 ):
-    """Plot the top positive and negative features for a factor."""
+    """
+    Plot the top positive and negative features for one factor within one modality.
+
+    The function first retrieves ranked feature scores for the requested factor
+    using ``top_features_for_factor``. It then combines the top negative and top
+    positive features into a single horizontal bar plot, colors negative scores
+    blue and positive scores red, draws a vertical zero line, and optionally
+    annotates bars with p-values near their bases.
+
+    Parameters
+    ----------
+    ontology : MuData-like
+        Ontology object passed to ``top_features_for_factor``.
+    factor : str
+        Factor identifier to plot.
+    modality : str
+        Modality name to query.
+    n_pos : int, default=10
+        Number of highest-scoring positive features to include.
+    n_neg : int, default=10
+        Number of lowest-scoring negative features to include.
+    alpha : float, optional
+        Optional p-value threshold forwarded to ``top_features_for_factor``.
+    figsize : tuple of float, default=(7, 6)
+        Width and height of the plotting panel in inches.
+    panel_margins : tuple of float, default=(2.8, 0.35, 0.45, 0.55)
+        Margins around the panel in inches, ordered as
+        ``(left, right, bottom, top)``.
+    xlim : tuple of float, optional
+        Explicit x-axis limits. If omitted, limits are inferred from the plotted
+        scores and padded automatically.
+    xpad_frac : float, default=0.06
+        Fractional padding used when resolving x-axis limits automatically.
+    pval_fontsize : float, default=8
+        Font size for p-value labels.
+    pval_fmt : str, default="p={:.1e}"
+        Format string used for p-value annotations.
+    pval_offset_frac : float, default=0.015
+        Fraction of x-axis width used to offset p-value labels from zero.
+    path : str, optional
+        Optional output path for saving the figure.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    ax : matplotlib.axes.Axes
+        The bar-plot axes.
+
+    Raises
+    ------
+    ValueError
+        If no features are available for the requested factor and modality.
+    """
     pos, neg = top_features_for_factor(
         ontology,
         factor,
@@ -229,7 +388,71 @@ def plot_modality_feature_top_items(
     pval_offset_frac: float = 0.015,
     path: Optional[str] = None,
 ):
-    """Plot the top genes or top factors for a modality feature."""
+    """
+    Plot the top genes or top factors associated with a modality feature.
+
+    This function supports two complementary views of a modality feature:
+
+    - ``what="genes"``: rank genes by the feature-loading column for the
+      requested feature
+    - ``what="factors"``: rank ontology factors by their modality score for the
+      requested feature
+
+    In both modes, the function plots the top positive and top negative items as
+    a horizontal bar chart and optionally annotates p-values when factor-level
+    modality p-values are available.
+
+    Parameters
+    ----------
+    ontology : MuData-like
+        Ontology object.
+    modality : str
+        Name of the modality to query.
+    feature : str
+        Feature name to resolve within the modality.
+    cell_type : str, optional
+        Optional lineage used to filter or disambiguate lineage-qualified
+        features and factor subsets.
+    what : {"genes", "factors"}, default="genes"
+        Type of item to rank and plot.
+    n_pos : int, default=10
+        Number of top positive items to include.
+    n_neg : int, default=10
+        Number of top negative items to include.
+    alpha : float, optional
+        Optional p-value threshold used only when ``what="factors"``.
+    figsize : tuple of float, default=(7, 6)
+        Width and height of the plotting panel in inches.
+    panel_margins : tuple of float, default=(2.8, 0.35, 0.45, 0.55)
+        Margins around the panel in inches, ordered as
+        ``(left, right, bottom, top)``.
+    xlim : tuple of float, optional
+        Explicit x-axis limits.
+    xpad_frac : float, default=0.06
+        Fractional padding added when x-axis limits are inferred automatically.
+    pval_fontsize : float, default=8
+        Font size for p-value labels.
+    pval_fmt : str, default="p={:.1e}"
+        Format string used for p-value annotations.
+    pval_offset_frac : float, default=0.015
+        Fraction of x-axis width used to offset p-value labels from zero.
+    path : str, optional
+        Optional output path for saving the figure.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    ax : matplotlib.axes.Axes
+        The bar-plot axes.
+
+    Raises
+    ------
+    ValueError
+        If ``what`` is invalid or if no items remain after filtering.
+    KeyError
+        If the requested feature cannot be resolved to a unique modality column.
+    """
     if what not in {"genes", "factors"}:
         raise ValueError("what must be 'genes' or 'factors'.")
 
@@ -307,21 +530,28 @@ def _matrix_to_dataframe(
     row_names: Optional[Sequence[str]] = None,
     col_names: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
-    """Convert an AnnData-like matrix container to a DataFrame.
+    """
+    Convert an AnnData-like matrix container to a dense DataFrame.
+
+    The function extracts ``adata_like.X``, converts it to a dense NumPy array,
+    and wraps it in a pandas DataFrame using either explicitly supplied row and
+    column names or, by default, ``adata_like.obs_names`` and
+    ``adata_like.var_names``.
 
     Parameters
     ----------
     adata_like : Any
-        Object with attributes ``X``, ``obs_names``, and ``var_names``.
+        Object with an ``X`` matrix and, optionally, ``obs_names`` and
+        ``var_names`` attributes.
     row_names : sequence of str, optional
-        Row names to use instead of ``adata_like.obs_names``.
+        Row labels to use instead of ``adata_like.obs_names``.
     col_names : sequence of str, optional
-        Column names to use instead of ``adata_like.var_names``.
+        Column labels to use instead of ``adata_like.var_names``.
 
     Returns
     -------
     pandas.DataFrame
-        Dense DataFrame representation of the matrix.
+        Dense DataFrame representation of the input matrix.
     """
     X = adata_like.X
     if hasattr(X, "toarray"):
@@ -341,7 +571,24 @@ def _get_factor_names(
     ontology: Any,
     factor_name_key: str = "FactorName",
 ) -> pd.Index:
-    """Return factor names from ontology.obs."""
+    """
+    Retrieve factor names from ontology metadata.
+
+    The function prefers the ``factor_name_key`` column in ``ontology.obs`` when
+    present, and otherwise falls back to ``ontology.obs_names``.
+
+    Parameters
+    ----------
+    ontology : Any
+        Ontology-like object with ``obs`` and ``obs_names`` attributes.
+    factor_name_key : str, default="FactorName"
+        Column in ``ontology.obs`` containing factor names.
+
+    Returns
+    -------
+    pandas.Index
+        Index of factor names labeled with name ``"factor"``.
+    """
     if factor_name_key in ontology.obs.columns:
         return pd.Index(ontology.obs[factor_name_key].astype(str), name="factor")
     return pd.Index(ontology.obs_names.astype(str), name="factor")
@@ -352,12 +599,19 @@ def _get_weights_df_from_ontology(
     weights_modality: str = "weights",
     factor_name_key: str = "FactorName",
 ) -> pd.DataFrame:
-    """Extract factor-gene weights from an ontology object.
+    """
+    Extract the ontology factor-weight matrix as a genes-by-factors DataFrame.
+
+    The function reads the requested weights modality from ``ontology.mod``,
+    resolves factor names from ``ontology.obs``, resolves gene names from
+    ``weights.var_names`` or, if necessary, ``ontology.uns["gene_names"]``,
+    converts the modality matrix to a DataFrame, and finally transposes it so
+    that genes are rows and factors are columns.
 
     Parameters
     ----------
     ontology : MuData-like
-        Ontology object containing a weights modality.
+        Ontology object containing modalities in ``.mod``.
     weights_modality : str, default="weights"
         Name of the modality containing factor-gene weights.
     factor_name_key : str, default="FactorName"
@@ -371,9 +625,10 @@ def _get_weights_df_from_ontology(
     Raises
     ------
     KeyError
-        If the weights modality is not present.
+        If ``weights_modality`` is not present in ``ontology.mod``.
     ValueError
-        If gene names cannot be resolved.
+        If gene names cannot be determined from the modality or ontology-level
+        metadata.
     """
     if weights_modality not in ontology.mod:
         raise KeyError(
@@ -408,12 +663,13 @@ def _get_modality_df_from_ontology(
     modality: str,
     factor_name_key: str = "FactorName",
 ) -> pd.DataFrame:
-    """Extract a factor-by-feature modality matrix from an ontology object.
+    """
+    Extract a modality matrix from an ontology object as a factor-by-feature DataFrame.
 
     Parameters
     ----------
     ontology : MuData-like
-        Ontology object containing the requested modality.
+        Ontology object containing modalities in ``.mod``.
     modality : str
         Name of the modality to extract.
     factor_name_key : str, default="FactorName"
@@ -427,7 +683,7 @@ def _get_modality_df_from_ontology(
     Raises
     ------
     KeyError
-        If the modality is not present.
+        If ``modality`` is not present in ``ontology.mod``.
     """
     if modality not in ontology.mod:
         raise KeyError(f"modality '{modality}' not found in ontology.mod.")
@@ -478,114 +734,121 @@ def plot_factor_effect_sizes(
     rasterize_points: bool = False,
     show: bool = True,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, plt.Axes], pd.Series]:
-    """Plot ontology factor gene weights with modality-derived effect sizes.
+    """
+    Plot factor gene weights together with modality-derived effect sizes for one lineage.
 
-    This function extracts factor-gene weights from ``ontology.mod[weights_modality]``
-    and a factor-level effect-size vector from ``ontology.mod[modality]`` for the
-    specified ``group``. It then subsets to factors belonging to ``cell_type`` and
-    plots, for each selected factor:
+    This visualization combines two views of the selected ontology factors:
 
-    - all gene weights as a horizontal scatter
-    - labels for the top positive and negative genes
-    - a horizontal bar showing the factor effect size for the requested group
+    1. a scatter plot of per-gene factor weights for each factor
+    2. a mirrored horizontal bar plot showing the effect size of each factor for
+       one modality feature or group
+
+    Factors are first restricted to the requested ``cell_type`` using
+    ``ontology.obs[cell_type_key]``. If explicit factors are not supplied, the
+    top ``n_factors`` are selected from the requested effect-size vector,
+    either by absolute magnitude or by raw signed value. For each selected
+    factor, the function plots all gene weights, colors points by weight value,
+    and annotates the top positive and top negative genes with connector lines.
 
     Parameters
     ----------
     ontology : MuData-like
-        Ontology object containing factor metadata in ``.obs`` and modalities in
-        ``.mod``.
+        Ontology object containing factor metadata in ``.obs`` and modality data
+        in ``.mod``.
     modality : str
-        Name of the modality containing effect sizes to plot, for example
-        ``"slice_treatment"``.
+        Name of the modality containing the effect-size vector to plot.
     group : str
-        Column within the selected modality to use as the effect-size vector, for
-        example a treatment such as ``"Topotecan"``.
+        Column within the selected modality to use as the factor-level effect
+        size, for example a treatment, condition, or comparison.
     cell_type : str
-        Cell type whose factors should be plotted.
+        Cell type or lineage whose factors should be displayed.
     weights_modality : str, default="weights"
-        Name of the ontology modality containing factor-gene weights.
+        Name of the modality containing factor-gene weights.
     cell_type_key : str, default="Classification"
-        Column in ``ontology.obs`` containing cell type assignments for factors.
+        Column in ``ontology.obs`` used to assign factors to lineages.
     factor_name_key : str, default="FactorName"
         Column in ``ontology.obs`` containing factor names.
     factors : sequence of str, optional
-        Specific factor names to plot. If provided, these should match the factor
-        names in ``ontology.obs[factor_name_key]`` for the requested ``cell_type``.
-        If ``None``, the top ``n_factors`` factors are selected from the requested
-        effect-size vector.
+        Explicit factor names to plot. If omitted, factors are selected from the
+        requested effect-size vector.
     n_factors : int, default=5
-        Number of factors to plot when ``factors=None``.
+        Number of factors to select when ``factors`` is not provided.
     n_label : int, default=10
         Number of top positive and top negative genes to label for each factor.
     sort_by_abs : bool, default=True
-        Whether to select top factors by absolute effect size when ``factors=None``.
-        If ``False``, factors are selected by descending raw effect size.
+        Whether automatic factor selection should use absolute effect size.
     figsize : tuple of float, default=(5, 8)
         Figure size in inches.
     cmap : str, default="coolwarm"
-        Colormap for gene-weight points.
+        Colormap used for gene-weight points.
     scatter_xlim : tuple of float, optional
-        X-axis limits for the gene-weight scatter. If ``None``, limits are inferred
-        from the selected factor weights.
+        Explicit x-axis limits for the gene-weight scatter plot. If omitted,
+        limits are inferred from the selected factors.
     color_scale_fraction : float, default=0.5
-        Fraction of the maximum absolute selected weight used to define the color
-        scale range.
+        Fraction of the maximum absolute selected weight used to define the
+        symmetric color scale range.
     point_size : float, default=50
         Scatter point size.
     point_alpha : float, default=1.0
-        Scatter point alpha.
+        Scatter point opacity.
     bar_alpha : float, default=0.3
-        Alpha value for the effect-size bars.
+        Opacity of the effect-size bars.
     bar_color : str, default="black"
         Color of the effect-size bars.
     label_fontsize : float, default=9
         Font size for gene labels.
     connector_color : str, default="gray"
-        Color of annotation connector lines.
+        Color of connector lines linking gene labels to points.
     connector_lw : float, default=0.8
-        Line width of annotation connector lines.
+        Line width of connector lines.
     connector_alpha : float, default=0.6
-        Alpha of annotation connector lines.
+        Opacity of connector lines.
     xlabel : str, default="Gene weight"
         X-axis label for the scatter axis.
     effect_xlabel : str, optional
-        X-axis label for the bar axis. If ``None``, defaults to
-        ``f"{modality}: {group}"``.
+        X-axis label for the effect-size bar axis. If omitted, defaults to
+        ``"{modality}: {group}"``.
     ylabel : str, default="Factor"
-        Y-axis label.
+        Y-axis label for the main scatter axis.
     title : str, optional
-        Figure title.
+        Figure title. If omitted, a default title based on ``cell_type`` and
+        ``group`` is used.
     strip_cell_type_from_labels : bool, default=True
-        Whether to remove the trailing ``"|{cell_type}"`` from factor labels on the
-        y-axis when present.
+        Whether to remove the trailing ``"|{cell_type}"`` suffix from factor
+        labels on the y-axis.
     save : str or pathlib.Path, optional
-        Optional path to save the figure.
+        Optional output path for saving the figure.
     dpi : int, default=300
-        Save resolution for non-vector formats.
+        Resolution used when saving raster formats.
     transparent : bool, default=False
         Whether to save with a transparent background.
     rasterize_points : bool, default=False
-        Whether to rasterize the scatter points.
+        Whether to rasterize the scatter points, which can help reduce file size
+        in vector outputs.
     show : bool, default=True
-        Whether to display the figure with ``plt.show()``.
+        Whether to display the figure via ``plt.show()``.
 
     Returns
     -------
     fig : matplotlib.figure.Figure
         The created figure.
     axes : tuple of matplotlib.axes.Axes
-        Tuple ``(ax, ax2)`` containing the scatter axis and the bar axis.
+        Tuple ``(ax, ax2)`` containing the gene-weight scatter axis and the
+        effect-size bar axis.
     effect_sizes : pandas.Series
-        Effect-size vector used for plotting, indexed by the plotted factor names.
+        Effect-size values used in the plot, indexed by the selected factor
+        names.
 
     Raises
     ------
     KeyError
-        If required ontology columns or modalities are missing, or if ``group`` is
-        not found within the requested modality.
+        If required ontology metadata columns are missing, if the requested
+        modality or weights modality is absent, or if ``group`` is not a column
+        in the selected modality.
     ValueError
-        If no factors remain after filtering to the requested cell type, or if no
-        valid factors are available for plotting.
+        If no factors exist for the requested cell type, if no valid effect
+        sizes remain after filtering, or if the selected factors have no usable
+        weights.
     """
     if cell_type_key not in ontology.obs.columns:
         raise KeyError(
