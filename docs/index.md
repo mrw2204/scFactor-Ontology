@@ -15,7 +15,7 @@
 
 The data structure of an `scfo ontology` object is based on `muon MuData`, the multi-modal extension of `AnnData`, treating factors as observations in `.X` and `.obs`. This allows for easy storage of factor loadings (`obs` = factors x `var` = genes) and prior-knowledge annotation data (`obs` = factors x `var` = feature enrichment scores) as separate `MuData` modalities. 
 
-Typical modalities stored in `scfo ontology` objects may include transcription factor regulons, ligand-receptor communication signatures, gene set enrichment analyses (e.g. MSigDB Hallmark Gene Ontology), etc. 
+Typical modalities stored in `scfo ontology` objects may include enrichment scores/p values from transcription factor regulons, ligand-receptor communication signatures, gene set enrichment analyses (e.g. MSigDB Hallmark Gene Ontology), etc. 
 
 ### What can scFO do?
 The centralized, organized design of `scfo` streamlines many common downstream analyses in latent factorization workflows. `scfo` functionality includes:
