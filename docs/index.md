@@ -9,7 +9,22 @@
 - **API**: function reference with parameters and return values
 - **GitHub repository**: https://github.com/mrw2204/scFactor-Ontology/tree/main
 
+## Installation:
+
+### From GitHub
+```bash
+pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
+```
+
+### Development install
+```bash
+git clone https://github.com/mrw2204/scFactor-Ontology.git
+cd scFactor-Ontology
+pip install -e .
+```
+
 ## FAQ
+
 ### What is an `scfo ontology` object?
 `scfo` is a tool that organizes latent factor gene loadings and associated prior-knowledge annotations - for example, calculated using a large-scale single cell atlas - into interpretable, factor-centric ontology resources. 
 
@@ -39,46 +54,3 @@ Yes! We have generated `scfo ontology` objects for general use by the neuro-onco
 
 - Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
 - **To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
-
-## Installation and Usage core concepts:
-
-### From GitHub
-```bash
-pip install "scfo @ git+https://github.com/mrw2204/scFactor-Ontology.git@main"
-```
-
-### Development install
-```bash
-git clone https://github.com/mrw2204/scFactor-Ontology.git
-cd scFactor-Ontology
-pip install -e .
-```
-
-### Factor-centric ontology object
-`make_ontology()` returns a factor-centric `MuData` object:
-
-- `ontology.obs` = factor metadata
-- `ontology.mod["weights"]` = global factor weight matrix
-- `ontology.mod[...]` = modality-specific enrichment matrices
-
-### Expected input formats for common modalities
-
-- `factor_loadings`: **genes x factors**
-- `regulon_loadings`: **genes x regulons**
-- `hallmark_lib_dict` and `gene_sets_dict`: **dictionaries of gene sets (unranked lists)**
-- `liana`: raw long-form LIANA output
-- external projections: `AnnData` with genes in `adata.var_names`
-
-### Naming conventions
-The package works best when factor names follow:
-```text
-Factor0|Tumor
-Factor1|Tumor
-Factor0|Mo_TAM
-```
-For lineage-specific regulons, use columns like:
-```text
-CEBPB(+)|Tumor
-STAT3(+)|Mo_TAM
-IRF1(+)|Endothelial
-```
