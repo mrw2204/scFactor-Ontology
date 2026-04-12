@@ -34,7 +34,99 @@ def project_ontology(
     store_sparse_scores: bool = True,
     show_progress: bool = True,
 ) -> Optional[Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:
-    """Project ontology weights onto an AnnData object."""
+    """
+    Project ontology factor weights onto an AnnData expression matrix.
+
+    This function scores each observation in ``adata`` against ontology factor
+    weights, either globally or in a lineage-restricted manner. Projection can
+    be performed by direct dot product or by permutation-based enrichment.
+
+    Two projection modes are supported:
+
+    - **global projection** (``annotation_key=None``):
+      every cell is scored against every ontology factor using the shared
+      overlapping gene set
+    - **annotation-matched projection** (``annotation_key`` provided):
+      each cell is scored only against ontology factors whose
+      ``ontology.obs["Classification"]`` matches that cell's annotation
+
+    Results can either be written back into ``adata.obsm`` or returned as
+    DataFrames.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        AnnData object containing the expression matrix to score.
+    ontology : muon.MuData
+        Ontology object containing factor weights and factor metadata.
+    annotation_key : str, optional
+        Column in ``adata.obs`` containing lineage or cell-type annotations used
+        to restrict projection to ontology factors with matching
+        ``ontology.obs["Classification"]`` values. If omitted, projection is
+        performed against all ontology factors.
+    layer : str, optional
+        Layer in ``adata.layers`` to use instead of ``adata.X``.
+    method : {"dot", "permutation"}, default="dot"
+        Scoring method. ``"dot"`` computes a simple matrix product between
+        expression and factor weights. ``"permutation"`` computes
+        permutation-based enrichment scores and empirical p-values.
+    n_iter : int, default=1000
+        Number of permutations used when ``method="permutation"``.
+    seed : int, default=0
+        Random seed for permutation-based scoring.
+    inplace : bool, default=True
+        If ``True``, store results in ``adata`` and return ``None``. If
+        ``False``, return score and p-value DataFrames instead.
+    score_key_added : str, default="scfo_scores"
+        Key used to store projected scores in ``adata.obsm`` when
+        ``inplace=True``.
+    pval_key_added : str, default="scfo_pvals"
+        Key used to store projected p-values in ``adata.obsm`` when
+        permutation-based projection is used and ``inplace=True``.
+    score_columns_uns_key : str, optional
+        Key used to store factor column names in ``adata.uns`` when sparse or
+        array-like scores are written to ``adata.obsm``. If omitted, defaults
+        to ``f"{score_key_added}_columns"``.
+    store_sparse_scores : bool, default=True
+        If ``True`` and ``inplace=True``, projected scores are stored as a CSR
+        sparse matrix in ``adata.obsm`` and factor names are stored separately
+        in ``adata.uns[score_columns_uns_key]``. If ``False``, scores are
+        stored directly as a DataFrame.
+    show_progress : bool, default=True
+        Whether to show progress bars during permutation-based scoring.
+
+    Returns
+    -------
+    None or tuple of (pandas.DataFrame, pandas.DataFrame or None)
+        If ``inplace=True``, returns ``None`` after writing results into
+        ``adata``. If ``inplace=False``, returns:
+
+        - ``score_df``: projected factor scores
+        - ``pval_df``: projected p-values if ``method="permutation"``, else
+          ``None``
+
+        In global mode, returned matrices are shaped
+        ``n_obs x n_factors``. In annotation-matched mode, returned matrices
+        contain only the cells and factors actually evaluated unless
+        ``inplace=True``, in which case full-size matrices with ``NaN`` outside
+        matched lineage blocks are written back.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is invalid, if no genes overlap between ``adata`` and the
+        ontology weights, or if no overlapping lineage labels are found between
+        ``adata.obs[annotation_key]`` and ``ontology.obs["Classification"]``.
+    KeyError
+        If required ontology fields, required ``adata.obs`` annotations, or
+        required storage keys are missing.
+
+    Notes
+    -----
+    In annotation-matched mode, each lineage block is scored independently using
+    only the genes overlapping between that subset of cells and the matching
+    subset of ontology factors.
+    """
     if method not in {"dot", "permutation"}:
         raise ValueError("method must be 'permutation' or 'dot'.")
     if "weights" not in ontology.obsm:
@@ -169,7 +261,61 @@ def collapse_projected_ontology_scores(
     store_sparse: bool = False,
     output_columns_uns_key: Optional[str] = None,
 ) -> pd.DataFrame:
-    """Collapse cell-type-suffixed projected ontology scores to plain factor names."""
+    """
+    Collapse lineage-suffixed projected factor scores to plain factor names.
+
+    This is useful when projected ontology scores are stored per lineage-aware
+    factor, for example ``Factor3|Tumor`` and ``Factor3|Mg_TAM``, and the user
+    wants to collapse these into lineage-agnostic factor summaries such as
+    ``Factor3``.
+
+    The function first reconstructs a score DataFrame from ``adata.obsm``. It
+    then strips suffixes after ``separator`` from the score columns, groups
+    columns by the resulting base factor name, and aggregates across grouped
+    columns.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        AnnData object containing projected ontology scores.
+    score_key : str, default="scfo_scores"
+        Key in ``adata.obsm`` containing projected scores.
+    output_key : str, optional
+        If provided, the collapsed matrix is also written to
+        ``adata.obsm[output_key]``.
+    columns_uns_key : str, optional
+        Key in ``adata.uns`` containing column names for ``adata.obsm[score_key]``
+        when the stored object is sparse or array-like rather than a DataFrame.
+        If omitted, defaults to ``f"{score_key}_columns"``.
+    separator : str, default="|"
+        Delimiter used to split lineage-qualified factor names.
+    agg : {"sum", "max", "mean"}, default="sum"
+        Aggregation used to combine lineage-specific columns sharing the same
+        base factor name.
+    store_sparse : bool, default=False
+        If ``True`` and ``output_key`` is provided, store the collapsed matrix
+        as CSR sparse format in ``adata.obsm[output_key]``. Otherwise store it
+        as a DataFrame.
+    output_columns_uns_key : str, optional
+        Key in ``adata.uns`` used to store collapsed column names when
+        ``store_sparse=True``. If omitted, defaults to
+        ``f"{output_key}_columns"``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Collapsed score matrix with rows aligned to ``adata.obs_names`` and
+        columns representing base factor names without lineage suffixes.
+
+    Raises
+    ------
+    KeyError
+        If ``score_key`` is missing from ``adata.obsm``, or if a sparse/array
+        score matrix is present but the corresponding column-name key is absent
+        from ``adata.uns``.
+    ValueError
+        If ``agg`` is not one of ``{"sum", "max", "mean"}``.
+    """
     if score_key not in adata.obsm:
         raise KeyError(f"adata.obsm['{score_key}'] not found.")
 
@@ -213,6 +359,20 @@ def collapse_projected_ontology_scores(
 
 
 def _normalize_cell_types(cell_types: Optional[Union[str, Sequence[str]]]) -> Optional[list]:
+    """
+    Normalize a cell-type selector to a list.
+
+    Parameters
+    ----------
+    cell_types : str, sequence of str, or None
+        User-supplied lineage selection.
+
+    Returns
+    -------
+    list or None
+        Returns ``None`` if no selection was provided, a one-element list if a
+        single string was provided, or ``list(cell_types)`` otherwise.
+    """
     if cell_types is None:
         return None
     if isinstance(cell_types, str):
@@ -221,10 +381,47 @@ def _normalize_cell_types(cell_types: Optional[Union[str, Sequence[str]]]) -> Op
 
 
 def _is_gene_set_query(signature: Union[Sequence[str], pd.Series, pd.DataFrame]) -> bool:
+    """
+    Determine whether a query signature should be treated as an unweighted gene set.
+
+    Parameters
+    ----------
+    signature : sequence of str, pandas.Series, or pandas.DataFrame
+        Query signature supplied by the user.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``signature`` is a plain sequence and should therefore be
+        treated as an unweighted gene set for GSEA-style querying. ``False`` if
+        it is a weighted ``Series`` or one-column ``DataFrame`` and should be
+        treated as a scored vector for permutation-based enrichment.
+    """
     return not isinstance(signature, (pd.Series, pd.DataFrame))
 
 
 def _signature_genes(signature: Union[Sequence[str], pd.Series, pd.DataFrame]) -> pd.Index:
+    """
+    Extract the gene identifiers from a query signature.
+
+    Parameters
+    ----------
+    signature : sequence of str, pandas.Series, or pandas.DataFrame
+        Query signature. For weighted signatures, genes are taken from the
+        index. For unweighted gene sets, genes are taken directly from the
+        sequence values.
+
+    Returns
+    -------
+    pandas.Index
+        Unique gene names as strings, with duplicates removed while preserving
+        pandas index semantics.
+
+    Raises
+    ------
+    ValueError
+        If ``signature`` is a DataFrame with more than one column.
+    """
     if isinstance(signature, pd.DataFrame):
         if signature.shape[1] != 1:
             raise ValueError("signature DataFrame must have exactly one column.")
@@ -237,6 +434,28 @@ def _signature_genes(signature: Union[Sequence[str], pd.Series, pd.DataFrame]) -
 
 
 def _overlap_summary(query_genes: pd.Index, target_genes: pd.Index) -> dict:
+    """
+    Summarize the overlap between a query gene set and a target gene universe.
+
+    Parameters
+    ----------
+    query_genes : pandas.Index
+        Genes present in the query signature.
+    target_genes : pandas.Index
+        Genes present in the ontology target being queried.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+
+        - ``query_n``: number of query genes
+        - ``target_n``: number of target genes
+        - ``overlap_n``: number of overlapping genes
+        - ``overlap_frac_query``: fraction of query genes overlapping target
+        - ``overlap_frac_target``: fraction of target genes overlapping query
+        - ``overlap_genes``: list of overlapping genes
+    """
     overlap = query_genes.intersection(target_genes)
     return {
         "query_n": int(len(query_genes)),
@@ -249,6 +468,50 @@ def _overlap_summary(query_genes: pd.Index, target_genes: pd.Index) -> dict:
 
 
 def _run_signature_query(signature, loadings: pd.DataFrame, pval_thresh=None, n_iter: int = 1000, seed: int = 0) -> pd.DataFrame:
+    """
+    Score a user-supplied signature against an ontology loading matrix.
+
+    This helper dispatches to one of two methods depending on the type of
+    ``signature``:
+
+    - unweighted gene sets are queried using preranked GSEA
+    - weighted signatures are queried using permutation-based enrichment
+
+    In both cases, results are returned as a ranked DataFrame with one row per
+    ontology feature, factor, or loading column.
+
+    Parameters
+    ----------
+    signature : sequence of str, pandas.Series, or pandas.DataFrame
+        Query signature. Plain sequences are treated as gene sets, while Series
+        and one-column DataFrames are treated as weighted signatures.
+    loadings : pandas.DataFrame
+        Target loading matrix with genes in rows and ontology features in
+        columns.
+    pval_thresh : float, optional
+        Optional p-value filter applied after scoring.
+    n_iter : int, default=1000
+        Number of permutations for either GSEA or permutation-based enrichment.
+    seed : int, default=0
+        Random seed for the scoring routine.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Ranked result table with columns:
+
+        - ``score``: enrichment score
+        - ``pval``: p-value
+        - ``method``: scoring method used, either ``"gsea"`` or
+          ``"permutation"``
+
+        Rows are sorted by descending score.
+
+    Raises
+    ------
+    ValueError
+        If the query signature shares no genes with ``loadings.index``.
+    """
     query_genes = _signature_genes(signature)
     overlap = query_genes.intersection(loadings.index)
     if len(overlap) == 0:
@@ -281,6 +544,30 @@ def _resolve_modality_loading_keys(
     modality: str,
     cell_types: Optional[Union[str, Sequence[str]]] = None,
 ):
+    """
+    Determine which ``varm`` loading keys should be queried for a modality.
+
+    This helper supports older or more complex modality storage layouts in which
+    feature-loadings may be stored under multiple lineage-specific ``varm``
+    keys. When a modality has only one key, or when its declared row axis is
+    already ``"gene|cell_type"``, an empty list is returned to indicate that the
+    default loading accessor should be used instead of key-specific retrieval.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Ontology object.
+    modality : str
+        Modality name whose loading keys should be inspected.
+    cell_types : str, sequence of str, or None, optional
+        Optional lineage restriction used to select only lineage-specific keys.
+
+    Returns
+    -------
+    list
+        List of selected ``varm`` keys. An empty list indicates that either no
+        special key resolution is needed or no key-based subdivision applies.
+    """
     mod = ontology.mod[modality]
     varm_keys = list(mod.varm.keys())
     if len(varm_keys) == 0:
@@ -308,6 +595,20 @@ def _resolve_modality_loading_keys(
 
 
 def _key_to_cell_type(varm_key: str) -> Optional[str]:
+    """
+    Infer a cell-type label from a modality ``varm`` key.
+
+    Parameters
+    ----------
+    varm_key : str
+        ``varm`` key name, typically of the form ``celltype_something``.
+
+    Returns
+    -------
+    str or None
+        The substring before the first underscore, or ``None`` if no underscore
+        is present.
+    """
     s = str(varm_key)
     if "_" not in s:
         return None
@@ -323,7 +624,72 @@ def signature_enrichment(
     seed: int = 0,
     cell_types: Optional[Union[str, Sequence[str]]] = None,
 ) -> Dict[str, Dict[str, object]]:
-    """Query ontology weights and modality loadings with a gene list or weighted vector."""
+    """
+    Query ontology weights and modality feature-loadings with a gene signature.
+
+    This function provides a unified interface for searching an ontology with
+    either:
+
+    - an unweighted gene set
+    - a weighted gene signature stored as a Series or one-column DataFrame
+
+    The query can be run against the global factor weights and/or against any
+    modality that stores feature-loadings. Each target returns both a ranked
+    result table and a summary of gene overlap between the query and the target
+    gene universe.
+
+    Parameters
+    ----------
+    signature : sequence of str, pandas.Series, or pandas.DataFrame
+        Query signature. Plain sequences are treated as gene sets and scored via
+        GSEA. Series and one-column DataFrames are treated as weighted
+        signatures and scored via permutation-based enrichment.
+    ontology : muon.MuData
+        Ontology object to search.
+    search_in : sequence of str, optional
+        Specific targets to search. Valid entries include ``"weights"`` and any
+        modality present in ``ontology.mod``. If omitted, the search includes
+        ``"weights"`` plus all ontology modalities.
+    pval_thresh : float, optional
+        Optional p-value threshold applied to each result table after scoring.
+    n_iter : int, default=1000
+        Number of permutations used in GSEA or permutation-based enrichment.
+    seed : int, default=0
+        Random seed.
+    cell_types : str, sequence of str, or None, optional
+        Optional lineage restriction applied when retrieving ontology weights or
+        modality feature-loadings.
+
+    Returns
+    -------
+    dict of {str: dict}
+        Mapping from target name to a dictionary with two entries:
+
+        - ``"results"``: ranked DataFrame of enrichment results
+        - ``"overlap"``: overlap summary dictionary describing shared genes
+          between the query and the target
+
+        For modalities with lineage-specific loading keys, separate entries may
+        be returned using labels such as ``"regulons|Tumor"``. For lineage-
+        restricted queries without key-specific splitting, result keys may take
+        forms such as ``"hallmark|Tumor"`` or
+        ``"hallmark|Tumor,Mg_TAM"``.
+
+    Raises
+    ------
+    KeyError
+        If a requested target is neither ``"weights"`` nor a modality present in
+        ``ontology.mod``.
+    ValueError
+        If a query cannot be evaluated because there is no gene overlap between
+        the signature and a target loading matrix.
+
+    Notes
+    -----
+    The function de-duplicates the target list while preserving order. The
+    global ``"weights"`` target is always treated specially and queried using
+    ``factor_weights_to_df``.
+    """
     results: Dict[str, Dict[str, object]] = {}
     targets = ["weights"] + list(ontology.mod.keys()) if search_in is None else list(search_in)
     seen = set()
