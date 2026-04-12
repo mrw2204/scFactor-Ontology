@@ -114,7 +114,7 @@ liana[
 ].head()
 ```
 
-The package implements user-defined pruning of the raw LIANA output to construct LR signatures:
+The package implements user-defined pruning of the raw LIANA output to construct LR signatures through the `make_filtered_lr_signatures()` function:
 
 - scores individual LR pairs between cell_type_sender and cell_type_receiver via `score = magnitude_rank * specificity_rank`
 - constructs pair-wise LR signatures representing overall (summed score) communication between sender and receiver populations (e.g. signature `rec by|Mo_TAM` containing summed scores for each `ligand|Tumor` summed across every possible `receptor|Mo_TAM`)
@@ -135,11 +135,16 @@ Lineage-specific gene-wise signature matrices are preserved in `varm`.
 
 ```python
 ontology = make_ontology(
-    factor_loadings=factor_loadings.fillna(0),
-    regulon_loadings=regulon_loadings.fillna(0),
-    hallmark_lib=hallmark_lib_dict,
-    gene_sets=gene_sets_dict,
-    liana=liana,
+    factor_loadings=all_factors,
+    scored_modalities_ct_aware={
+        'regulons': all_regulons,
+        'liana_ligand': all_liana_send,
+        'liana_receptor': all_liana_rec,
+    },
+    gene_set_modalities={
+       'hallmark': hallmark_lib_dict,
+       'literature': gene_sets_dict,
+    },
     n_iter=1000,
 )
 ```
@@ -184,9 +189,9 @@ lig_scores = modality_scores_to_df(ontology, "liana_ligand", cell_types="Tumor")
 
 ```python
 tumor_regulons = modality_feature_loadings_to_df(
-    ontology,
-    "regulons",
-    key="Tumor_regulons",
+    ontology=ontology,
+    modality="regulons",
+    cell_types="Tumors",
 )
 ```
 
@@ -194,9 +199,9 @@ Similarly for LIANA:
 
 ```python
 tumor_lig = modality_feature_loadings_to_df(
-    ontology,
-    "liana_ligand",
-    key="Tumor_ligand_signatures",
+    ontology=ontology,
+    modality="liana_ligand",
+    cell_types="Tumors",
 )
 ```
 
@@ -272,30 +277,13 @@ fig, ax = plot_modality_feature_top_items(
 - This can be done in "Global" mode (every factor projected onto every cell), or "Cell-type-aware" mode (restricting comparisons to cells x factors with matching annotations).
 - If `annotation_key` is only partially overlapping with annotation categories in `ontology`, then projections are only calculated for the intersection of annotations.
 
-### Global projection
+### Cell-type-aware factor projection
 
 ```python
 project_ontology(
     adata=adata_external,
     ontology=ontology,
-    layer=None,
-    annotation_key=None,
-    score_key_added="ontology_scores",
-    pval_key_added="ontology_pvals",
-    method="permutation",
-    n_iter=1000,
-    inplace=True,
-)
-```
-
-### Cell-type-aware projection
-
-```python
-project_ontology(
-    adata=adata_external,
-    ontology=ontology,
-    layer="log1p" if "log1p" in adata_external.layers else None,
-    annotation_key="final_annotation_fine",
+    annotation_key="classification",
     score_key_added="ontology_scores",
     pval_key_added="ontology_pvals",
     method="permutation",
@@ -307,7 +295,7 @@ project_ontology(
 If projection is done in cell-type-aware mode, the resulting dataframe in `.obsm` contains NaN values for non-tested cell type x factor combinations. To collapse to a more convient format (`n_cells` x `n_factors`), use the following:
 
 ```python
-collapsed = scfo.collapse_projected_ontology_scores(
+collapsed = collapse_projected_ontology_scores(
     adata=adata_external,
     score_key="ontology_scores",
     output_key="ontology_scores_collapsed",
@@ -316,45 +304,20 @@ collapsed = scfo.collapse_projected_ontology_scores(
 )
 ```
 
-
-### Fast dot-product projection
-
-```python
-project_ontology(
-    adata=adata_external,
-    ontology=ontology,
-    annotation_key="final_annotation_fine",
-    method="dot",
-    inplace=True,
-)
-```
-
-## Differential testing of ontology scores
-
-### Single-cell testing
+## Pseudobulk differential testing of ontology scores
 
 ```python
-test_adata, de_results = diff_exp_ontology(
-    adata=adata_external,
-    ontology_keys="ontology_scores",
-    groupby="Status",
-    method="wilcoxon",
-    pseudo_bulk=False,
-)
-```
-
-### Pseudobulk testing
-
-```python
-test_adata_pb, de_results_pb = diff_exp_ontology(
-    adata=adata_external,
-    ontology_keys="ontology_scores",
-    groupby="Status",
-    method="wilcoxon",
-    pseudo_bulk=True,
-    pseudo_bulk_by=["Patient_Study"],
-    summary_metric="mean",
-)
+adata_in, de_results = diff_exp_ontology(
+        adata_in=adata_in,
+        cell_type = "Tumor",
+        cell_type_key = 'classification',
+        ontology_keys="ontology_scores",
+        groupby="Treatment",
+        method="wilcoxon",
+        reference="DMSO",
+        pseudo_bulk=True,
+        pseudo_bulk_by=['TissueID', 'Treatment']
+    )
 ```
 
 ## Signature enrichment
@@ -394,12 +357,6 @@ Each query target returns:
 - `results`: ranked enrichment table (GSEA-based for lists, permutation-based for vectors)
 - `overlap`: overlap summary between the query and the queried ontology target
 
-Example:
-
-```python
-sig_results["weights"]["results"].head()
-sig_results["weights"]["overlap"]
-```
 
 ## Export to Excel
 
