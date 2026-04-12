@@ -34,30 +34,47 @@ DEFAULT_CELL_TYPES: List[str] = [
 
 @dataclass(frozen=True)
 class MatrixPair:
+    """
+    Container for enrichment outputs.
+
+    Attributes
+    ----------
+    score : pandas.DataFrame
+        Primary score matrix, typically a factor-by-feature matrix of
+        z-scores, normalized enrichment scores, or other signed effect sizes.
+    pval : pandas.DataFrame
+        Matrix of p-values aligned exactly to ``score``.
+    """
     score: pd.DataFrame
     pval: pd.DataFrame
 
 
 def require_dataframe(df: pd.DataFrame, name: str) -> pd.DataFrame:
     """
-    Validate that an object is a well-formed pandas DataFrame.
+    Validate that an input is a pandas DataFrame with unique row and column labels.
+
+    This helper is used throughout the module to fail early when callers pass
+    ``None``, non-DataFrame objects, or DataFrames whose index or columns are
+    duplicated. It returns the original object unchanged so it can be used
+    inline during argument normalization.
 
     Parameters
     ----------
-    df
+    df : pandas.DataFrame
         Object to validate.
-    name
+    name : str
         Human-readable argument name used in error messages.
 
     Returns
     -------
     pandas.DataFrame
-        The validated input DataFrame.
+        The validated DataFrame.
 
     Raises
     ------
     ValueError
-        If ``df`` is ``None`` or if its index or columns contain duplicates.
+        If ``df`` is ``None``, or if ``df.index`` or ``df.columns`` contains
+        duplicate values.
     TypeError
         If ``df`` is not a pandas DataFrame.
     """
@@ -74,24 +91,29 @@ def require_dataframe(df: pd.DataFrame, name: str) -> pd.DataFrame:
 
 def ensure_no_nan(df: pd.DataFrame, name: str) -> pd.DataFrame:
     """
-    Ensure that a DataFrame contains no missing values.
+    Validate that a DataFrame contains no missing values.
+
+    Many downstream enrichment routines in this module assume dense numerical
+    matrices with no ``NaN`` entries. This helper is therefore used to enforce
+    that requirement before matrix multiplication, permutation testing, or
+    storage inside ontology containers.
 
     Parameters
     ----------
-    df
-        DataFrame to validate.
-    name
+    df : pandas.DataFrame
+        DataFrame to check.
+    name : str
         Human-readable argument name used in error messages.
 
     Returns
     -------
     pandas.DataFrame
-        The validated DataFrame.
+        The same DataFrame, returned unchanged when validation succeeds.
 
     Raises
     ------
     ValueError
-        If any entry in the DataFrame is ``NaN``.
+        If any entry in ``df`` is missing.
     """
     if df.isna().any().any():
         raise ValueError(
@@ -103,17 +125,18 @@ def ensure_no_nan(df: pd.DataFrame, name: str) -> pd.DataFrame:
 
 def as_dense(x):
     """
-    Convert a dense or sparse matrix-like object to a NumPy array.
+    Convert a dense or sparse matrix-like object to a NumPy ndarray.
 
     Parameters
     ----------
-    x
-        Dense or sparse array-like object.
+    x : array-like or scipy.sparse.spmatrix
+        Input matrix or array.
 
     Returns
     -------
     numpy.ndarray
-        Dense representation of ``x``.
+        Dense representation of ``x``. Sparse inputs are converted with
+        ``toarray()``; dense inputs are passed through ``numpy.asarray``.
     """
     if sp.issparse(x):
         return x.toarray()
@@ -122,17 +145,18 @@ def as_dense(x):
 
 def as_csr(x: Union[np.ndarray, sp.spmatrix]) -> sp.csr_matrix:
     """
-    Convert a dense or sparse matrix-like object to CSR format.
+    Convert a dense or sparse matrix-like object to CSR sparse format.
 
     Parameters
     ----------
-    x
-        Dense or sparse array-like object.
+    x : numpy.ndarray or scipy.sparse.spmatrix
+        Input matrix.
 
     Returns
     -------
     scipy.sparse.csr_matrix
-        CSR representation of ``x``.
+        CSR-formatted sparse matrix. Existing sparse inputs are converted with
+        ``tocsr()``; dense inputs are wrapped with ``scipy.sparse.csr_matrix``.
     """
     if sp.issparse(x):
         return x.tocsr()
@@ -143,15 +167,18 @@ def row_zscore(df: pd.DataFrame) -> pd.DataFrame:
     """
     Z-score each row of a DataFrame independently.
 
+    For each row, values are centered by the row mean and scaled by the row
+    standard deviation. Rows with zero variance are returned as all zeros.
+
     Parameters
     ----------
-    df
-        Input DataFrame.
+    df : pandas.DataFrame
+        Input matrix whose rows should be standardized independently.
 
     Returns
     -------
     pandas.DataFrame
-        Row-wise z-scored matrix. Rows with zero variance are returned as zeros.
+        Row-wise z-scored matrix with the same index and columns as ``df``.
     """
     mean = df.mean(axis=1)
     std = df.std(axis=1).replace(0, np.nan)
@@ -161,20 +188,29 @@ def row_zscore(df: pd.DataFrame) -> pd.DataFrame:
 
 def safe_factor_metadata(factor_names: Sequence[str], separator: str = "|") -> pd.DataFrame:
     """
-    Construct standard factor metadata from factor names.
+    Infer standard ontology factor metadata from factor names.
+
+    Factor names are assumed to follow a convention such as
+    ``Factor3|Tumor``. The function extracts the full factor name, the
+    classification suffix after ``separator``, and the numeric factor index
+    when the left-hand portion contains a token of the form ``FactorN``.
 
     Parameters
     ----------
-    factor_names
-        Sequence of factor names, typically in the form ``FactorN|CellType``.
-    separator
-        Separator used between the base factor name and the classification label.
+    factor_names : sequence of str
+        Factor identifiers.
+    separator : str, default="|"
+        Delimiter separating the base factor token from the lineage or
+        classification label.
 
     Returns
     -------
     pandas.DataFrame
-        DataFrame indexed by factor name with columns ``FactorName``,
-        ``Classification``, and ``Number``.
+        Metadata table indexed by factor name with columns:
+
+        - ``FactorName``: original factor identifier
+        - ``Classification``: suffix after ``separator`` or ``"Unknown"``
+        - ``Number``: parsed integer factor number when available
 
     Notes
     -----
@@ -198,22 +234,23 @@ def subset_factor_loadings_by_cell_type(
     separator: str = "|",
 ) -> pd.DataFrame:
     """
-    Restrict a gene-by-factor loading matrix to one factor lineage.
+    Subset a gene-by-factor loading matrix to one ontology lineage.
 
     Parameters
     ----------
-    factor_loadings
-        Gene-by-factor matrix with factor names in the columns.
-    cell_type
-        Cell-type / lineage label to retain.
-    separator
-        Separator used in factor names.
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix with factors in columns.
+    cell_type : str
+        Classification label to retain, for example ``"Tumor"`` or
+        ``"Mg_TAM"``.
+    separator : str, default="|"
+        Delimiter used when parsing factor names.
 
     Returns
     -------
     pandas.DataFrame
-        Copy of ``factor_loadings`` restricted to factors whose parsed
-        classification equals ``cell_type``.
+        Copy of ``factor_loadings`` containing only factor columns whose
+        inferred classification matches ``cell_type``.
     """
     meta = safe_factor_metadata(factor_loadings.columns, separator=separator)
     keep = meta.index[meta["Classification"] == cell_type]
@@ -229,34 +266,44 @@ def build_modality_adata(
     cell_type_separator: str = "|",
 ) -> ad.AnnData:
     """
-    Build an AnnData container for a single ontology modality.
+    Build an ``AnnData`` object representing a single ontology modality.
+
+    The returned object stores factor-by-feature scores in ``.X``, optional
+    p-values in ``layers["pval"]``, optional factor metadata in ``.obs``, and
+    optional feature-loading matrices in ``.varm``. When feature loadings are
+    provided, their row labels are additionally recorded in ``uns["gene_names"]``
+    and the row-axis style is tracked in ``uns["feature_loading_row_axis"]``.
 
     Parameters
     ----------
-    score_df
+    score_df : pandas.DataFrame
         Factor-by-feature score matrix. Rows correspond to ontology factors and
         columns correspond to modality features.
-    pval_df
-        Optional factor-by-feature p-value matrix aligned to ``score_df``.
-    feature_loadings
-        Optional loading matrix stored alongside the modality. Expected shape is
-        ``loading_row x feature``, where ``loading_row`` is either plain genes
-        or ``gene|cell_type`` labels.
-    factor_metadata
-        Optional metadata table aligned to factor rows. When provided, it is
-        stored in ``.obs``.
-    feature_loading_key
-        Key under which the transposed loading matrix is stored in ``.varm``.
-    cell_type_separator
-        Separator used to detect whether ``feature_loadings.index`` is tagged as
-        ``gene|cell_type``.
+    pval_df : pandas.DataFrame, optional
+        Factor-by-feature p-value matrix aligned to ``score_df``.
+    feature_loadings : pandas.DataFrame, optional
+        Loading matrix to store for downstream interpretation. Expected shape is
+        ``loading_row x feature``, where loading rows are either plain genes or
+        labels such as ``gene|cell_type``.
+    factor_metadata : pandas.DataFrame, optional
+        Metadata table aligned to factor rows. Stored in ``.obs`` after
+        reindexing to ``score_df.index``.
+    feature_loading_key : str, default="feature_loadings"
+        Key used when storing the transposed loading matrix in ``.varm``.
+    cell_type_separator : str, default="|"
+        Delimiter used to determine whether feature-loading row labels are
+        cell-type tagged.
 
     Returns
     -------
     anndata.AnnData
-        Modality container with scores in ``.X``, optional p-values in
-        ``layers["pval"]``, and optional feature loadings in
-        ``varm[feature_loading_key]``.
+        Modality container with aligned score, p-value, metadata, and optional
+        loading information.
+
+    Notes
+    -----
+    Feature loadings are reindexed to ``score_df.columns`` before storage, so
+    missing features are filled with zeros and extra columns are dropped.
     """
     require_dataframe(score_df, "score_df")
     score_df = score_df.copy()
@@ -310,21 +357,38 @@ def signature_to_df(
     name: str = "signature",
 ) -> pd.DataFrame:
     """
-    Convert a gene list or weighted gene signature to a one-column DataFrame.
+    Convert a gene list or weighted signature into a one-column DataFrame.
+
+    This helper standardizes several user-facing signature formats to a common
+    gene-by-weight table aligned to a chosen gene universe.
 
     Parameters
     ----------
-    signature
-        Sequence of genes, weighted Series, or one-column DataFrame.
-    gene_index
-        Reference gene universe used for reindexing.
-    name
-        Column name for the returned signature.
+    signature : sequence of str, pandas.Series, or pandas.DataFrame
+        Signature to convert. Accepted forms are:
+
+        - sequence of gene names, interpreted as a binary signature with weight 1
+        - weighted Series indexed by gene
+        - one-column DataFrame indexed by gene
+
+    gene_index : sequence of str
+        Reference gene universe used for reindexing and zero-filling.
+    name : str, default="signature"
+        Column name for the output.
 
     Returns
     -------
     pandas.DataFrame
-        One-column gene-by-weight DataFrame aligned to ``gene_index``.
+        One-column gene-by-weight DataFrame indexed by ``gene_index``.
+
+    Raises
+    ------
+    ValueError
+        If ``signature`` is a DataFrame with more than one column.
+
+    Notes
+    -----
+    Duplicate gene entries are averaged before reindexing.
     """
     genes = pd.Index(gene_index, name="gene")
     if isinstance(signature, pd.DataFrame):
@@ -345,20 +409,25 @@ def signature_to_df(
 
 def get_matrix_from_adata(adata: ad.AnnData, layer: Optional[str] = None) -> pd.DataFrame:
     """
-    Extract an AnnData matrix as a labeled DataFrame.
+    Extract ``adata.X`` or one of ``adata.layers`` as a labeled DataFrame.
 
     Parameters
     ----------
-    adata
-        AnnData object to extract from.
-    layer
-        Optional layer name. If omitted, ``adata.X`` is used.
+    adata : anndata.AnnData
+        AnnData object to read from.
+    layer : str, optional
+        Layer name to extract. If omitted, ``adata.X`` is used.
 
     Returns
     -------
     pandas.DataFrame
-        Dense DataFrame with ``adata.obs_names`` as rows and ``adata.var_names``
-        as columns.
+        Dense DataFrame with ``adata.obs_names`` as rows and
+        ``adata.var_names`` as columns.
+
+    Raises
+    ------
+    KeyError
+        If ``layer`` is specified but is not present in ``adata.layers``.
     """
     if layer is None:
         X = adata.X
@@ -377,6 +446,54 @@ def calc_enrichment(
     show_progress: bool = True,
     progress_message: str = 'Permuting...',
 ) -> MatrixPair:
+    """
+    Compute permutation-based enrichment of weighted signatures in sample profiles.
+
+    The input ``samples_by_genes`` matrix is multiplied by the
+    gene-by-signature matrix ``signatures`` to obtain observed sample-by-feature
+    scores. A null distribution is then estimated by repeatedly permuting gene
+    order in the signature matrix, preserving the marginal distribution of both
+    inputs while breaking gene-level correspondence. Final scores are reported
+    as z-scores relative to the permutation null, together with two-sided
+    empirical p-values.
+
+    Parameters
+    ----------
+    samples_by_genes : pandas.DataFrame
+        Matrix with samples, factors, or observations in rows and genes in
+        columns.
+    signatures : pandas.DataFrame
+        Gene-by-feature matrix of weighted signatures. Rows must be genes and
+        columns correspond to features to score.
+    n_iter : int, default=1000
+        Number of gene-label permutations used to estimate the null
+        distribution.
+    seed : int, default=0
+        Random seed for permutation reproducibility.
+    show_progress : bool, default=True
+        Whether to display a progress bar.
+    progress_message : str, default="Permuting..."
+        Message displayed by the progress bar.
+
+    Returns
+    -------
+    MatrixPair
+        Object containing:
+
+        - ``score``: observed-vs-null z-scores
+        - ``pval``: two-sided empirical p-values
+
+    Raises
+    ------
+    ValueError
+        If either input contains missing values, is malformed, or if the two
+        matrices share no genes.
+
+    Notes
+    -----
+    Only the intersection of ``samples_by_genes.columns`` and
+    ``signatures.index`` is used.
+    """
     X_df = ensure_no_nan(require_dataframe(samples_by_genes, "samples_by_genes"), "samples_by_genes")
     W_df = ensure_no_nan(require_dataframe(signatures, "signatures"), "signatures")
     common_genes = X_df.columns.intersection(W_df.index)
@@ -429,11 +546,57 @@ def gsea_enrichment(
     show_progress: bool = True,
     progress_message: str = 'Permuting...',
 ) -> MatrixPair:
-    """Robust preranked GSEA for sparse loading matrices.
+    """
+    Run robust preranked GSEA on a factor loading matrix.
 
-    Adds a tiny deterministic jitter to break massive ties, adapts ``min_size``
-    for small query overlaps, and fails gracefully for pathological ranking
-    vectors by returning neutral scores (NES=0, p=1).
+    Each factor column is treated as a ranked gene list and scored against the
+    supplied gene sets using ``gseapy.prerank``. The implementation adds a tiny
+    deterministic jitter to break extreme ties, adapts ``min_size`` to small
+    overlap cases, and falls back to neutral outputs when GSEA fails or when a
+    factor has no overlap with the supplied signatures.
+
+    Parameters
+    ----------
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix.
+    gene_sets : mapping or str
+        Either a mapping ``{set_name: genes}`` or a gene-set library name
+        understood by ``gseapy``.
+    permutation_num : int, default=1000
+        Number of permutations used by GSEA.
+    min_size : int, default=10
+        Minimum gene-set size passed to GSEA, subject to automatic reduction in
+        low-overlap settings.
+    max_size : int, default=5000
+        Maximum gene-set size passed to GSEA.
+    seed : int, default=42
+        Random seed for GSEA.
+    processes : int, default=1
+        Number of worker processes used by ``gseapy``.
+    show_progress : bool, default=True
+        Whether to display a progress bar over factors.
+    progress_message : str, default="Permuting..."
+        Message displayed by the progress bar.
+
+    Returns
+    -------
+    MatrixPair
+        Object containing:
+
+        - ``score``: factor-by-gene-set normalized enrichment scores
+        - ``pval``: aligned nominal p-values
+
+    Raises
+    ------
+    ImportError
+        If ``gseapy`` is not installed.
+    ValueError
+        If ``factor_loadings`` is invalid or contains missing values.
+
+    Notes
+    -----
+    When GSEA cannot be run for a factor, the function returns NES=0 and p=1
+    for the affected terms rather than failing the entire modality.
     """
     if gp is None:
         raise ImportError("gseapy is required for gsea_enrichment().")
@@ -515,7 +678,30 @@ def make_factor_gene_salience(
     cell_types: Sequence[str],
     separator: str = "|",
 ) -> pd.DataFrame:
-    """Replicate original behavior: factor_loadings / factor_loadings.std(), then abs-sum per lineage."""
+    """
+    Summarize per-gene salience across factors within each lineage.
+
+    Factor loadings are first normalized by the standard deviation of each
+    factor column. For each requested cell type, the absolute normalized
+    loadings are then summed across all factor columns whose names contain that
+    lineage label.
+
+    Parameters
+    ----------
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix.
+    cell_types : sequence of str
+        Cell types or lineage labels to summarize.
+    separator : str, default="|"
+        Reserved for compatibility with factor naming conventions.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Gene-by-cell-type salience matrix in which larger values indicate genes
+        with larger aggregate absolute loading magnitude across factors in that
+        lineage.
+    """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings")
     fl_norm = fl.div(fl.std(axis=0).replace(0, np.nan), axis=1).fillna(0.0)
     out: Dict[str, pd.Series] = {}
@@ -534,20 +720,67 @@ def make_filtered_lr_signatures(
     factor_z_threshold: float = 0.0,
     plot_size: float = 0.1,
 ):
-    """Preserve original LIANA-signature construction logic exactly.
+    """
+    Convert LIANA results into filtered ligand and receptor signature matrices.
+
+    This helper reproduces the original package logic for transforming LIANA
+    interaction tables into sender-ligand and receiver-receptor signature
+    matrices that can be used as scored ontology modalities. Interactions are
+    first summarized across sender/receiver contexts using LIANA magnitude and
+    specificity ranks, then filtered using z-scored LIANA interaction strength
+    together with a lineage-aware gene salience score derived from factor
+    loadings.
+
+    Parameters
+    ----------
+    liana : pandas.DataFrame
+        LIANA interaction table containing at least the columns
+        ``source``, ``target``, ``ligand_complex``, ``receptor_complex``,
+        ``magnitude_rank``, and ``specificity_rank``.
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix used to compute MOFA or factor-derived
+        salience of ligands and receptors within each cell type.
+    cell_types : sequence of str, default=DEFAULT_CELL_TYPES
+        Cell types used when computing per-lineage gene salience and when
+        constructing the paired LR output matrices.
+    plot_scores : bool, default=True
+        Whether to show a diagnostic scatter plot of LIANA z-score versus
+        factor-derived salience z-score.
+    liana_z_threshold : float, default=0.0
+        Minimum standardized LIANA interaction score required to retain an
+        interaction.
+    factor_z_threshold : float, default=0.0
+        Minimum standardized factor-derived salience score required to retain an
+        interaction.
+    plot_size : float, default=0.1
+        Point size for the optional diagnostic scatter plot.
 
     Returns
     -------
-    all_send_signatures
-        Rows are ``sender_cell_type|ligand_gene`` and columns are ``rec by|receiver_cell_type``.
-    all_rec_signatures
-        Rows are ``receiver_cell_type|receptor_gene`` and columns are ``sent by|sender_cell_type``.
-    filtered
-        Long-form filtered LIANA table.
-    all_biopsy_factors_mag
-        Pivoted magnitude matrix.
-    all_biopsy_factors_spec
-        Pivoted specificity matrix.
+    tuple
+        Five objects are returned:
+
+        1. ``all_send_signatures_wide`` :
+           gene-by-feature sender-ligand signature matrix
+        2. ``all_rec_signatures_wide`` :
+           gene-by-feature receiver-receptor signature matrix
+        3. ``filtered`` :
+           long-format filtered interaction table
+        4. ``all_biopsy_factors_mag`` :
+           pivoted LIANA magnitude matrix
+        5. ``all_biopsy_factors_spec`` :
+           pivoted LIANA specificity matrix
+
+    Raises
+    ------
+    ValueError
+        If required LIANA columns are missing.
+
+    Notes
+    -----
+    Output columns are context labels such as ``rec by|Tumor`` or
+    ``sent by|Mg_TAM`` and are designed to plug into downstream scored
+    enrichment functions.
     """
     required = {"source", "target", "ligand_complex", "receptor_complex", "magnitude_rank", "specificity_rank"}
     missing = required.difference(liana.columns)
@@ -692,20 +925,52 @@ def lr_enrichment(
     show_progress: bool = True,
 ) -> MatrixPair:
     """
-    Cell-type-aware LR enrichment using row-paired intermediate signature matrices.
+    Compute lineage-matched ligand or receptor enrichment for ontology factors.
 
-    Expected lr_loadings structure
-    ------------------------------
-    direction='ligand'
-        rows: <sender_cell_type>|<ligand_gene>
-        cols: rec by|<receiver_cell_type>
+    This function scores ontology factors against intermediate ligand or
+    receptor signature matrices whose rows encode lineage-qualified genes and
+    whose columns encode paired communication contexts. For each lineage, only
+    the matching factor subset and matching row block of ``lr_loadings`` are
+    compared.
 
-    direction='receptor'
-        rows: <receiver_cell_type>|<receptor_gene>
-        cols: sent by|<sender_cell_type>
+    Parameters
+    ----------
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor ontology loading matrix.
+    lr_loadings : pandas.DataFrame
+        Intermediate LR signature matrix. Expected structure depends on
+        ``direction``:
 
-    For each factor lineage, only the corresponding row block is used.
-    The final modality keeps the shared 11 paired-context columns.
+        - ``direction="ligand"``:
+          rows = ``<sender_cell_type>|<ligand_gene>``,
+          columns = ``rec by|<receiver_cell_type>``
+        - ``direction="receptor"``:
+          rows = ``<receiver_cell_type>|<receptor_gene>``,
+          columns = ``sent by|<sender_cell_type>``
+
+    cell_types : sequence of str, default=DEFAULT_CELL_TYPES
+        Ordered list of ontology lineages to evaluate.
+    cell_type_separator : str, default="|"
+        Delimiter used in factor names and LR row labels.
+    direction : {"ligand", "receptor"}, default="ligand"
+        Which LR representation is being scored.
+    n_iter : int, default=1000
+        Number of permutations used by the enrichment routine.
+    seed : int, default=0
+        Random seed.
+    show_progress : bool, default=True
+        Whether to display progress bars.
+
+    Returns
+    -------
+    MatrixPair
+        Factor-by-context z-scores and p-values, aligned to the full factor set.
+
+    Raises
+    ------
+    ValueError
+        If ``direction`` is invalid or if no lineage-matched enrichments can be
+        produced.
     """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings")
     lr = ensure_no_nan(require_dataframe(lr_loadings, "lr_loadings"), "lr_loadings")
@@ -764,6 +1029,48 @@ def regulon_enrichment(
     show_progress: bool = True,
     progress_message: str = 'Permuting...',
 ) -> MatrixPair:
+    """
+    Score ontology factors against regulon loading matrices.
+
+    In cell-type-aware mode, regulon columns are expected to be suffixed with a
+    lineage label such as ``TF|Tumor``. Factors are then compared only against
+    regulons from the matching lineage, and suffixes are stripped from the final
+    feature names before lineage blocks are concatenated. In agnostic mode, all
+    factors are scored against the full regulon matrix at once.
+
+    Parameters
+    ----------
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor ontology loading matrix.
+    regulon_loadings : pandas.DataFrame
+        Gene-by-regulon loading matrix.
+    cell_types : sequence of str, default=DEFAULT_CELL_TYPES
+        Ordered list of ontology lineages to evaluate.
+    cell_type_separator : str, default="|"
+        Delimiter used in factor names and regulon column labels.
+    cell_type_regulons : bool, default=True
+        If ``True``, require lineage matching between factors and regulons. If
+        ``False``, run a single cell-type-agnostic enrichment.
+    n_iter : int, default=1000
+        Number of permutations used in scored enrichment.
+    seed : int, default=0
+        Random seed.
+    show_progress : bool, default=True
+        Whether to show progress bars in cell-type-aware mode.
+    progress_message : str, default="Permuting..."
+        Message prefix used for the progress bar.
+
+    Returns
+    -------
+    MatrixPair
+        Factor-by-regulon z-score and p-value matrices.
+
+    Raises
+    ------
+    ValueError
+        If lineage-aware mode is requested but no matching lineage blocks are
+        found.
+    """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings")
     rl = ensure_no_nan(require_dataframe(regulon_loadings, "regulon_loadings"), "regulon_loadings")
     if not cell_type_regulons:
@@ -801,16 +1108,18 @@ def _split_base_and_cell_type(labels: Sequence[str], separator: str = "|") -> Tu
 
     Parameters
     ----------
-    labels
-        Sequence of labels to split.
-    separator
-        Separator between the base token and the cell-type suffix.
+    labels : sequence of str
+        Labels to parse.
+    separator : str, default="|"
+        Delimiter between the base token and the cell-type suffix.
 
     Returns
     -------
     tuple of pandas.Index
-        Base labels and cell-type suffixes. Labels without ``separator`` receive
-        ``None`` as their suffix.
+        Two aligned indices:
+
+        - base labels with the suffix removed
+        - cell-type suffixes, or ``None`` where no suffix is present
     """
     labels = pd.Index([str(x) for x in labels])
     base = pd.Index(
@@ -826,19 +1135,19 @@ def _split_base_and_cell_type(labels: Sequence[str], separator: str = "|") -> Tu
 
 def _index_has_cell_type_tags(index: Sequence[str], separator: str = "|") -> bool:
     """
-    Return whether any label in an index contains the requested separator.
+    Return whether any label in an index contains a cell-type suffix.
 
     Parameters
     ----------
-    index
-        Sequence of labels to inspect.
-    separator
-        Separator used to mark cell-type-tagged labels.
+    index : sequence of str
+        Labels to inspect.
+    separator : str, default="|"
+        Delimiter used to mark cell-type-tagged labels.
 
     Returns
     -------
     bool
-        True if at least one label contains ``separator``.
+        ``True`` if at least one label contains ``separator``.
     """
     idx = pd.Index([str(x) for x in index])
     return bool(idx.str.contains(re.escape(separator), regex=True).any())
@@ -846,17 +1155,17 @@ def _index_has_cell_type_tags(index: Sequence[str], separator: str = "|") -> boo
 
 def _unique_preserve_order(values: Sequence[str]) -> pd.Index:
     """
-    Return unique string values in first-seen order.
+    Return unique values in order of first appearance.
 
     Parameters
     ----------
-    values
-        Sequence of values to deduplicate.
+    values : sequence of str
+        Input values.
 
     Returns
     -------
     pandas.Index
-        Unique values preserving original order.
+        De-duplicated values, preserving original order.
     """
     seen = set()
     out: List[str] = []
@@ -875,13 +1184,25 @@ def _collapse_column_cell_type_tagged_matrix(
     allowed_cell_types: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """
-    Collapse a gene-by-(feature|cell_type) matrix to gene-by-feature form.
+    Collapse a gene-by-``(feature|cell_type)`` matrix to gene-by-feature form.
 
-    Rows are plain genes.
-    Columns are expected to be labeled like ``<feature>|<cell_type>``.
-    Only columns whose cell type is in ``allowed_cell_types`` are retained when
-    that argument is provided. After stripping suffixes, duplicate feature names
-    are summed.
+    Column suffixes are stripped, duplicate feature names are summed, and an
+    optional lineage filter can be applied before collapsing.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Matrix with plain gene rows and cell-type-tagged feature columns.
+    separator : str, default="|"
+        Delimiter separating feature names from cell-type labels.
+    allowed_cell_types : sequence of str, optional
+        If provided, only columns whose suffix is in this set are retained.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Collapsed gene-by-feature matrix with plain gene rows and plain feature
+        columns.
     """
     require_dataframe(df, "df")
     out = df.copy()
@@ -914,24 +1235,32 @@ def _collapse_column_cell_type_tagged_matrix_preserve_rows(
     allowed_cell_types: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """
-    Collapse a gene-by-(feature|cell_type) matrix to a row-tagged matrix.
+    Collapse a matrix with tagged columns while preserving lineage on the row axis.
 
-    Input
-    -----
-    rows
-        <gene>
-    columns
-        <feature>|<cell_type>
+    Input rows are plain genes and input columns are
+    ``<feature>|<cell_type>``. The output is reorganized so that each lineage
+    becomes a separate row block labeled ``<gene>|<cell_type>``, while columns
+    are collapsed to plain feature names.
 
-    Output
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Gene-by-``(feature|cell_type)`` matrix.
+    separator : str, default="|"
+        Delimiter separating tokens from cell-type labels.
+    allowed_cell_types : sequence of str, optional
+        Optional subset of lineages to keep.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Row-tagged loading matrix with rows of the form ``gene|cell_type`` and
+        plain feature columns.
+
+    Raises
     ------
-    rows
-        <gene>|<cell_type>
-    columns
-        <feature>
-
-    This preserves cell-type-specific gene loadings while still collapsing the
-    feature axis to the generic feature names used by the modality score matrix.
+    ValueError
+        If no cell-type-tagged columns are present after filtering.
     """
     require_dataframe(df, "df")
     out = df.copy()
@@ -981,18 +1310,33 @@ def _collapse_cell_type_tagged_matrix(
     allowed_cell_types: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """
-    Collapse a fully cell-type-tagged matrix while preserving row cell-type labels.
+    Collapse a fully cell-type-tagged matrix while preserving row lineage labels.
 
-    Expected structure
-    ------------------
-    rows
-        <gene>|<cell_type>
-    columns
-        <feature>|<cell_type>
+    Both rows and columns are expected to carry suffixes of the form
+    ``|cell_type``. Only row/column blocks with matching cell types are
+    retained. Within each lineage block, column suffixes are stripped and
+    duplicate labels are summed.
 
-    Only blocks where the row and column cell type match are retained. Within each
-    cell type, column suffixes are stripped and duplicate feature names are summed.
-    Row suffixes are preserved, so the output retains ``<gene>|<cell_type>`` rows.
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Matrix with rows ``<gene>|<cell_type>`` and columns
+        ``<feature>|<cell_type>``.
+    separator : str, default="|"
+        Delimiter separating tokens from cell-type labels.
+    allowed_cell_types : sequence of str, optional
+        Optional subset of lineages to keep.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Matrix with rows still labeled ``gene|cell_type`` and columns collapsed
+        to plain feature names.
+
+    Raises
+    ------
+    ValueError
+        If no overlapping cell-type tags are found across rows and columns.
     """
     require_dataframe(df, "df")
     df = df.copy()
@@ -1058,18 +1402,57 @@ def _scored_enrichment_cell_type_aware(
     collapse_output: bool = True,
 ) -> Tuple[MatrixPair, pd.DataFrame]:
     """
-    Compute cell-type-aware scored enrichment and build storage-ready feature loadings.
+    Compute lineage-aware scored enrichment for a cell-type-tagged modality.
 
-    Supported input structures
-    --------------------------
-    1. rows = <gene>,          columns = <feature>|<cell_type>
-    2. rows = <gene>|<cell_type>, columns = <feature>|<cell_type>
+    The function supports two modality layouts:
 
-    In both cases, enrichment is computed only between ontology factors and
-    modality feature columns whose cell-type tags match. When ``collapse_output``
-    is True, score columns are collapsed to plain feature names while the
-    returned feature-loading matrix preserves row-level cell-type identity as
-    ``<gene>|<cell_type>``.
+    1. rows = ``<gene>``, columns = ``<feature>|<cell_type>``
+    2. rows = ``<gene>|<cell_type>``, columns = ``<feature>|<cell_type>``
+
+    In both cases, ontology factors are grouped by
+    ``factor_meta["Classification"]`` and scored only against modality features
+    from the matching lineage. A storage-ready feature-loading matrix is built
+    in parallel so the resulting modality can later expose interpretable
+    per-feature gene weights.
+
+    Parameters
+    ----------
+    factor_weights : pandas.DataFrame
+        Factor-by-gene ontology weight matrix.
+    factor_meta : pandas.DataFrame
+        Factor metadata indexed by factor name and containing a
+        ``Classification`` column.
+    modality_df : pandas.DataFrame
+        Cell-type-aware scored modality matrix.
+    n_iter : int, default=1000
+        Number of permutations used for enrichment.
+    seed : int, default=0
+        Random seed.
+    show_progress : bool, default=True
+        Whether to display progress bars.
+    progress_message : str, default="Permuting..."
+        Base message for the progress bar; lineage labels are appended
+        internally.
+    cell_type_separator : str, default="|"
+        Delimiter used to parse cell-type tags.
+    collapse_output : bool, default=True
+        If ``True``, score columns are collapsed to plain feature names across
+        lineages. If ``False``, feature columns retain explicit
+        ``feature|cell_type`` suffixes.
+
+    Returns
+    -------
+    tuple
+        Two objects are returned:
+
+        1. ``MatrixPair`` of factor-by-feature enrichment scores and p-values
+        2. feature-loading matrix aligned to the final feature axis
+
+    Raises
+    ------
+    ValueError
+        If no overlapping lineages are present between ontology factors and the
+        modality labels, or if no lineage-specific enrichments can be produced.
     """
     factor_weights = require_dataframe(factor_weights, "factor_weights").copy()
     modality_df = require_dataframe(modality_df, "modality_df").copy()
@@ -1226,18 +1609,91 @@ def add_modality(
     inplace: bool = True,
 ) -> Optional[mu.MuData]:
     """
-    Add a modality to an existing ontology object.
+    Add a new modality to an existing ontology object.
 
-    This function supports precomputed factor-by-feature score matrices,
-    scored gene-by-feature priors that require permutation enrichment, and
-    gene-set modalities scored by preranked GSEA. For cell-type-aware scored
-    modalities, columns are expected to carry a suffix after
-    ``cell_type_separator`` and are matched to ontology factor lineages.
+    The function supports three workflows:
+
+    - **precomputed**: provide ``score_df`` (and optionally ``pval_df``)
+    - **scored**: provide a gene-by-feature DataFrame in ``modality_data`` and
+      compute permutation-based enrichment
+    - **gene_set**: provide either a gene-set mapping or a gene-set library
+      name in ``modality_data`` and compute preranked GSEA
+
+    When ``modality_type="auto"``, the mode is inferred from the supplied
+    inputs. For scored modalities, both agnostic and cell-type-aware enrichment
+    are supported. Resulting modality scores, p-values, and optional feature
+    loadings are stored as an ``AnnData`` object in ``ontology.mod[modality_name]``.
+
+    Parameters
+    ----------
+    ontology : muon.MuData
+        Existing ontology object.
+    modality_name : str
+        Name under which the new modality will be stored.
+    score_df : pandas.DataFrame, optional
+        Precomputed factor-by-feature score matrix. Required in precomputed
+        mode.
+    pval_df : pandas.DataFrame, optional
+        Optional precomputed p-value matrix aligned to ``score_df``.
+    modality_data : pandas.DataFrame or mapping or str, optional
+        Raw modality input used in scored or gene-set mode.
+    modality_type : {"auto", "precomputed", "scored", "gene_set"}, default="auto"
+        How the new modality should be interpreted.
+    feature_loadings : pandas.DataFrame, optional
+        Explicit loading matrix to store for downstream interpretation.
+    feature_loading_key : str, default="feature_loadings"
+        Key used for storage in the modality ``.varm`` slot.
+    modality_uns : mapping, optional
+        Additional metadata copied into ``modality.uns``.
+    n_iter : int, default=1000
+        Default number of permutations for enrichment routines.
+    seed : int, default=0
+        Random seed passed to enrichment routines.
+    show_progress : bool, default=True
+        Whether to display progress output.
+    permutation_kwargs : mapping, optional
+        Additional keyword arguments forwarded to ``calc_enrichment`` or the
+        lineage-aware scored enrichment helper.
+    gsea_kwargs : mapping, optional
+        Additional keyword arguments forwarded to ``gsea_enrichment``.
+    store_input_as_feature_loadings : bool, default=True
+        In scored mode, whether the supplied or inferred input matrix should
+        also be stored as feature loadings when no explicit
+        ``feature_loadings`` are provided.
+    scored_cell_type_aware : bool, default=False
+        Whether scored modality columns should be interpreted as
+        lineage-qualified features and matched only to factors of the same
+        lineage.
+    cell_type_separator : str, default="|"
+        Delimiter used to parse lineage labels in factor names and modality
+        labels.
+    collapse_cell_type_aware_scores : bool, default=True
+        Whether to collapse lineage-qualified score columns to plain feature
+        names in cell-type-aware scored mode.
+    inplace : bool, default=True
+        If ``True``, modify ``ontology`` in place and return ``None``.
+        Otherwise return an updated copy.
 
     Returns
     -------
-    None or muon.MuData
-        ``None`` when ``inplace=True``; otherwise an updated ontology copy.
+    muon.MuData or None
+        ``None`` when ``inplace=True``; otherwise the updated ontology object.
+
+    Raises
+    ------
+    ValueError
+        If inputs are inconsistent with the requested mode, if score matrices
+        contain factors absent from the ontology, or if ontology metadata
+        needed for alignment are missing.
+    KeyError
+        If required ontology components such as ``ontology.uns["gene_names"]``
+        or the ``"weights"`` modality are absent.
+
+    Notes
+    -----
+    The function attempts to reconcile cell-type-tagged feature-loading matrices
+    with collapsed score axes when necessary, so that stored loadings remain
+    aligned to the final modality feature names.
     """
     permutation_kwargs = dict(permutation_kwargs or {})
     gsea_kwargs = dict(gsea_kwargs or {})
@@ -1465,107 +1921,78 @@ def make_ontology(
     show_progress = True,
 ) -> mu.MuData:
     """
-    Construct a factor-centric ontology object from factor loadings and a set of
-    generic annotation modalities.
+    Construct a factor-centric ontology ``MuData`` object from factor loadings.
 
-    This function initializes ontology-wide factor metadata and global factor
-    weights from a gene-by-factor loading matrix, computes enrichment for each
-    supplied modality, stores each modality as an ``AnnData`` object in
-    ``ontology.mod``, and returns the final ontology as a ``MuData`` object.
+    The ontology is initialized from a gene-by-factor loading matrix and stores:
 
-    Two modality classes are supported. Scored modalities are weighted
-    gene-by-feature matrices and are processed with permutation-based
-    enrichment using :func:`calc_enrichment`. Gene-set modalities are unranked
-    gene-set collections or gene-set library names and are processed with
-    :func:`gsea_enrichment`.
+    - factor metadata in ``ontology.obs``
+    - the global factor weight matrix as a modality named ``"weights"``
+    - gene names in ``ontology.uns["gene_names"]``
+    - additional modalities in ``ontology.mod``
 
-    Scored modalities added through :func:`make_ontology` are handled in a
-    cell-type-agnostic manner by default. That is, each feature column is
-    evaluated against every ontology factor using the shared gene space,
-    without matching row or column labels by lineage. For cell-type-aware
-    scored enrichment, modalities should instead be added after ontology
-    construction using :func:`add_modality` with
-    ``scored_cell_type_aware=True``.
-
-    The resulting ontology stores factor metadata in ``ontology.obs``, global
-    factor weights in ``ontology.obsm["weights"]``, the corresponding gene
-    names in ``ontology.uns["gene_names"]``, and each annotation modality as
-    an ``AnnData`` object in ``ontology.mod``.
+    Scored modalities are processed with permutation-based enrichment and
+    gene-set modalities are processed with preranked GSEA. Cell-type-aware
+    scored modalities can also be supplied and are appended after initial object
+    creation using the same lineage-aware logic exposed by ``add_modality``.
 
     Parameters
     ----------
-    factor_loadings
-        Gene-by-factor loading matrix. Rows must correspond to genes and
-        columns must correspond to ontology factors.
-    factor_type
-        Label describing the origin or type of the factor loadings. This value
-        is stored in ``ontology.uns["factor_type"]`` and also added to factor
-        metadata as the ``FactorType`` column.
-    factor_metadata
-        Optional factor metadata DataFrame indexed by factor name. If not
-        provided, metadata are inferred from factor names using
-        :func:`safe_factor_metadata`. If provided but incomplete, missing
-        metadata values are filled from the inferred defaults where possible.
-    cell_type_separator
-        Separator used when parsing factor names for inferred metadata.
-    scored_modalities
-        Optional mapping from modality name to a scored modality matrix. Each
-        value must be a DataFrame with rows corresponding to genes and columns
-        corresponding to modality features or signatures. Each scored modality
-        is processed in a cell-type-agnostic fashion by default.
-    scored_modalities_ct_aware
-        Optional mapping from modality name to a scored modality matrix in cell 
-        type-aware mode. Each value must be a DataFrame with rows corresponding 
-        to genes and columns corresponding to modality features or signatures, 
-        with cell type as a suffix matching factor name cell type labels. 
-    gene_set_modalities
-        Optional mapping from modality name to an unranked gene-set collection.
-        Each value may be either a mapping of gene-set names to gene lists or a
-        string naming a gene-set library supported by ``gseapy``.
-    scored_feature_loadings
-        Optional mapping from scored modality name to an explicit
-        gene-by-feature loading matrix to store in the modality ``varm`` slot.
-        If omitted for a scored modality, the scored modality input matrix
-        itself may be used as the default feature-loading representation.
-    feature_loading_key_map
-        Optional mapping from modality name to the key used when storing that
-        modality's feature loadings in ``varm``.
-    scored_modality_uns
-        Optional mapping from scored modality name to a metadata dictionary to
-        store in the modality ``uns`` slot.
-    gene_set_modality_uns
-        Optional mapping from gene-set modality name to a metadata dictionary
-        to store in the modality ``uns`` slot.
-    n_iter
-        Default number of permutations for scored modalities and default
-        ``permutation_num`` passed to GSEA unless overridden downstream.
-    seed
-        Default random seed passed to modality enrichment routines.
-    show_progress
-        Whether to display progress output during modality enrichment.
+    factor_loadings : pandas.DataFrame
+        Gene-by-factor loading matrix. Rows are genes and columns are factors.
+    factor_type : str, default="MOFA"
+        Label describing the source or type of factors. Stored in
+        ``ontology.uns["factor_type"]`` and copied into the ``FactorType``
+        column of factor metadata.
+    factor_metadata : pandas.DataFrame, optional
+        Optional metadata indexed by factor name. Missing standard fields are
+        inferred from factor names where possible.
+    cell_type_separator : str, default="|"
+        Delimiter used when parsing factor names and lineage-aware modality
+        labels.
+    scored_modalities : mapping, optional
+        Mapping from modality name to gene-by-feature scored matrices to be
+        evaluated in a cell-type-agnostic manner.
+    scored_modalities_ct_aware : mapping, optional
+        Mapping from modality name to lineage-aware scored matrices whose
+        columns carry ``|cell_type`` suffixes and should be matched to ontology
+        factor lineages.
+    gene_set_modalities : mapping, optional
+        Mapping from modality name to gene-set collections or gene-set library
+        names.
+    scored_feature_loadings : mapping, optional
+        Optional explicit loading matrices to store for scored modalities.
+    feature_loading_key_map : mapping, optional
+        Per-modality override for the key used in ``.varm`` to store feature
+        loadings.
+    scored_modality_uns : mapping, optional
+        Per-modality metadata dictionaries for scored modalities.
+    gene_set_modality_uns : mapping, optional
+        Per-modality metadata dictionaries for gene-set modalities.
+    n_iter : int, default=1000
+        Default number of permutations used for scored modalities and default
+        GSEA permutation count.
+    seed : int, default=0
+        Random seed passed to enrichment routines.
+    show_progress : bool, default=True
+        Whether to display progress output during ontology construction.
 
     Returns
     -------
     muon.MuData
-        Newly constructed ontology object containing factor metadata, global
-        factor weights, and all requested modalities.
+        Newly constructed ontology object.
 
     Raises
     ------
     ValueError
-        Raised if factor loadings are invalid or if no modalities are supplied
-        in environments where an empty ``MuData`` object cannot be constructed.
+        If ``factor_loadings`` are malformed, contain missing values, or if no
+        user-facing modalities are supplied in an environment where an empty
+        ontology cannot be constructed.
 
     Notes
     -----
-    This function no longer performs modality-specific preprocessing for
-    ligand-receptor, regulon, or other specialized inputs. Such preprocessing
-    should be performed upstream. For example, LIANA outputs can be converted
-    into ligand and receptor signature matrices using
-    :func:`make_filtered_lr_signatures`, and the resulting matrices can then be
-    passed through ``scored_modalities``. Additional scored or gene-set
-    modalities can be appended after ontology construction using
-    :func:`add_modality`.
+    Specialized modality preprocessing is intentionally externalized. For
+    example, LIANA outputs should first be converted into scored ligand and
+    receptor signature matrices before being passed into ontology construction.
     """
     fl = ensure_no_nan(require_dataframe(factor_loadings, "factor_loadings"), "factor_loadings").copy()
     fl.index = fl.index.astype(str)
@@ -1712,17 +2139,18 @@ def make_ontology(
 
 def _normalize_cell_types(cell_types: Optional[Union[str, Sequence[str]]]) -> Optional[List[str]]:
     """
-    Normalize an optional cell-type selector to a list of strings.
+    Normalize a cell-type selector to a list of strings.
 
     Parameters
     ----------
-    cell_types
-        Single cell type, sequence of cell types, or ``None``.
+    cell_types : str, sequence of str, or None
+        User-supplied lineage selector.
 
     Returns
     -------
     list of str or None
-        Normalized cell-type list, or ``None`` if no filtering was requested.
+        Normalized list of cell types, or ``None`` if no filtering was
+        requested.
     """
     if cell_types is None:
         return None
@@ -1733,21 +2161,22 @@ def _normalize_cell_types(cell_types: Optional[Union[str, Sequence[str]]]) -> Op
 
 def _filter_factor_index_by_cell_types(index: pd.Index, ontology: mu.MuData, cell_types: Optional[Union[str, Sequence[str]]]) -> pd.Index:
     """
-    Restrict a factor index to selected ontology classifications.
+    Filter a factor index by ontology lineage metadata.
 
     Parameters
     ----------
-    index
-        Factor index to filter.
-    ontology
-        Ontology object containing factor metadata in ``ontology.obs``.
-    cell_types
-        Optional lineage selector.
+    index : pandas.Index
+        Factor names to filter.
+    ontology : muon.MuData
+        Ontology object whose ``obs`` table contains a ``Classification``
+        column.
+    cell_types : str, sequence of str, or None
+        Requested lineage subset.
 
     Returns
     -------
     pandas.Index
-        Filtered factor index.
+        Subset of ``index`` whose factors belong to the requested lineages.
     """
     ct_list = _normalize_cell_types(cell_types)
     if ct_list is None:
@@ -1758,7 +2187,8 @@ def _filter_factor_index_by_cell_types(index: pd.Index, ontology: mu.MuData, cel
 
 
 def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
-    """Return a modality score matrix as a DataFrame.
+    """
+    Return a modality score matrix as a pandas DataFrame.
 
     Parameters
     ----------
@@ -1767,12 +2197,12 @@ def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Option
     modality : str
         Name of the modality to extract.
     cell_types : str or sequence of str, optional
-        Restrict returned factor rows to selected ontology lineages.
+        Restrict factor rows to selected ontology lineages.
 
     Returns
     -------
     pandas.DataFrame
-        Factor-by-feature score matrix for the requested modality.
+        Factor-by-feature score matrix for ``modality``.
     """
     mod = ontology.mod[modality]
     df = pd.DataFrame(as_dense(mod.X), index=mod.obs_names, columns=mod.var_names)
@@ -1781,7 +2211,8 @@ def modality_scores_to_df(ontology: mu.MuData, modality: str, cell_types: Option
 
 
 def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optional[Union[str, Sequence[str]]] = None) -> Optional[pd.DataFrame]:
-    """Return modality p-values as a DataFrame.
+    """
+    Return a modality p-value matrix as a pandas DataFrame.
 
     Parameters
     ----------
@@ -1790,12 +2221,13 @@ def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optiona
     modality : str
         Name of the modality to extract.
     cell_types : str or sequence of str, optional
-        Restrict returned factor rows to selected ontology lineages.
+        Restrict factor rows to selected ontology lineages.
 
     Returns
     -------
     pandas.DataFrame or None
-        Factor-by-feature p-value matrix if available, otherwise ``None``.
+        Factor-by-feature p-value matrix if ``modality`` stores a ``"pval"``
+        layer; otherwise ``None``.
     """
     mod = ontology.mod[modality]
     if "pval" not in mod.layers:
@@ -1806,21 +2238,33 @@ def modality_pvals_to_df(ontology: mu.MuData, modality: str, cell_types: Optiona
 
 
 def factor_weights_to_df(ontology: mu.MuData, transpose: bool = False, cell_types: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
-    """Return global factor weights as a pandas DataFrame.
+    """
+    Return the global ontology factor weight matrix as a DataFrame.
+
+    In the current storage scheme, global weights are kept as the modality
+    ``ontology.mod["weights"]`` rather than in ``ontology.obsm``.
 
     Parameters
     ----------
     ontology : muon.MuData
         Ontology object.
-    cell_types : str or sequence of str, optional
-        Restrict returned factors to selected ontology lineages.
     transpose : bool, default=False
-        If ``False``, return ``factor x gene``. If ``True``, return ``gene x factor``.
+        If ``False``, return ``factor x gene``. If ``True``, return
+        ``gene x factor``.
+    cell_types : str or sequence of str, optional
+        Restrict factor rows to selected ontology lineages before optional
+        transposition.
 
     Returns
     -------
     pandas.DataFrame
-        DataFrame representation of ``ontology.obsm['weights']``.
+        Global factor weight matrix.
+
+    Raises
+    ------
+    KeyError
+        If the ``"weights"`` modality or ``ontology.uns["gene_names"]`` is
+        missing.
     """
     if "weights" not in list(ontology.mod.keys()):
         raise KeyError("ontology.obsm['weights'] not found.")
@@ -1842,37 +2286,41 @@ def modality_feature_loadings_to_df(
     strip_cell_type_suffix: Optional[bool] = None,
 ) -> pd.DataFrame:
     """
-    Reconstruct a modality feature-loading matrix from stored ``.varm`` values.
+    Reconstruct a modality feature-loading matrix from stored ``.varm`` arrays.
+
+    This helper supports both the current single-key storage scheme and older
+    per-lineage ``varm`` layouts. When row labels are stored as
+    ``gene|cell_type``, optional lineage filtering can be applied and suffixes
+    can be stripped automatically when only one lineage is requested.
 
     Parameters
     ----------
-    ontology
+    ontology : muon.MuData
         Ontology object.
-    modality
-        Name of the modality to extract.
-    key
-        Specific ``varm`` key to use. If omitted, the default key stored in
-        ``uns["feature_loading_key_default"]`` is preferred when available; if
-        there is exactly one ``varm`` matrix, that key is used automatically.
-    cell_types
-        Optional cell type or list of cell types used to filter row-tagged
-        loading matrices.
-    strip_cell_type_suffix
-        Whether to strip the ``|cell_type`` suffix from returned row names when
-        a single cell type is requested. If omitted, suffix stripping is applied
-        automatically only when exactly one cell type is requested.
+    modality : str
+        Modality from which to retrieve feature loadings.
+    key : str, optional
+        Specific ``varm`` key to use. If omitted, the function prefers the
+        modality's stored default key and otherwise falls back to automatic
+        selection.
+    cell_types : str or sequence of str, optional
+        Optional lineage subset used to filter row-tagged loading matrices.
+    strip_cell_type_suffix : bool, optional
+        Whether to remove ``|cell_type`` suffixes from row names after
+        filtering. If omitted, suffixes are stripped automatically when exactly
+        one cell type is requested.
 
     Returns
     -------
     pandas.DataFrame
-        Loading matrix with rows equal to loading-row labels and columns equal
-        to modality features.
+        Loading matrix with loading rows as index and modality features as
+        columns.
 
-    Notes
-    -----
-    This helper supports both legacy per-cell-type ``varm`` storage and the
-    newer single-key storage scheme in which loading rows themselves can be
-    tagged as ``gene|cell_type``.
+    Raises
+    ------
+    KeyError
+        If no stored feature-loadings are available or if the requested key does
+        not exist.
     """
     mod = ontology.mod[modality]
     varm_keys = list(mod.varm.keys())
@@ -1953,20 +2401,20 @@ def get_factor_scores(
 
     Parameters
     ----------
-    ontology
+    ontology : muon.MuData
         Ontology object.
-    factors
+    factors : sequence of str, optional
         Optional subset of factor names to retain.
-    modalities
-        Optional subset of modality names to query. If omitted, all modalities
-        are returned.
-    cell_types
-        Optional lineage selector applied to factor rows.
+    modalities : sequence of str, optional
+        Optional subset of modality names. If omitted, all modalities are
+        queried.
+    cell_types : str or sequence of str, optional
+        Optional lineage filter applied before factor subsetting.
 
     Returns
     -------
-    dict
-        Mapping from modality name to factor-by-feature score DataFrame.
+    dict of {str: pandas.DataFrame}
+        Mapping from modality name to factor-by-feature score matrix.
     """
     modalities = list(ontology.mod.keys()) if modalities is None else list(modalities)
     out: Dict[str, pd.DataFrame] = {}
@@ -1980,23 +2428,27 @@ def get_factor_scores(
 
 def query_gene_set(ontology: mu.MuData, gene_set: Sequence[str], modalities: Optional[Sequence[str]] = None) -> Dict[str, pd.DataFrame]:
     """
-    Subset modality loading matrices to a supplied gene set.
+    Retrieve feature-loadings overlapping a supplied gene set.
 
     Parameters
     ----------
-    ontology
+    ontology : muon.MuData
         Ontology object.
-    gene_set
-        Sequence of genes to retrieve.
-    modalities
-        Optional subset of modalities to query. If omitted, all modalities are
-        searched.
+    gene_set : sequence of str
+        Genes to query.
+    modalities : sequence of str, optional
+        Optional subset of modalities to search. If omitted, all modalities are
+        queried.
 
     Returns
     -------
-    dict
-        Mapping from modality name to the subset of its loading matrix
-        overlapping the requested genes.
+    dict of {str: pandas.DataFrame}
+        Mapping from modality name to the subset of its loading matrix whose
+        row labels overlap ``gene_set``.
+
+    Notes
+    -----
+    Genes are de-duplicated while preserving input order.
     """
     modalities = list(ontology.mod.keys()) if modalities is None else list(modalities)
     gene_set = list(dict.fromkeys(map(str, gene_set)))
@@ -2010,22 +2462,37 @@ def query_gene_set(ontology: mu.MuData, gene_set: Sequence[str], modalities: Opt
 
 def top_features_for_factor(ontology: mu.MuData, factor: str, modality: str, n_pos: int = 10, n_neg: int = 10, alpha: Optional[float] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Return top positive and negative features for a factor.
+    Return the top positive and negative features for a factor.
 
     Parameters
     ----------
-    ontology
-        Factor-centric ontology MuData.
-    factor
-        Factor name, e.g. ``Factor0|Tumor``.
-    modality
-        Ontology modality name, or ``"weights"`` to query the global factor
-        weight matrix stored in ``ontology.obsm['weights']``.
-    n_pos, n_neg
-        Number of positive / negative features to return.
-    alpha
-        Optional p-value threshold. Only applies to ontology modalities that
-        store p-values; ignored for ``modality='weights'``.
+    ontology : muon.MuData
+        Ontology object.
+    factor : str
+        Factor identifier, for example ``"Factor0|Tumor"``.
+    modality : str
+        Modality to query, or ``"weights"`` to query the global ontology weight
+        matrix stored in ``ontology.mod["weights"]``.
+    n_pos : int, default=10
+        Number of highest-scoring features to return.
+    n_neg : int, default=10
+        Number of lowest-scoring features to return.
+    alpha : float, optional
+        Optional p-value threshold used to pre-filter modality features before
+        ranking. Ignored for ``modality="weights"``.
+
+    Returns
+    -------
+    tuple of pandas.DataFrame
+        Two DataFrames with columns ``feature``, ``score``, and ``pval``:
+
+        - positive features sorted descending by score
+        - negative features sorted ascending by score
+
+    Raises
+    ------
+    KeyError
+        If the requested factor or modality is not present.
     """
     if modality == "weights":
         if "weights" not in list(ontology.mod.keys()):
