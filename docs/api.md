@@ -14,9 +14,14 @@ This page documents the public Python API for `scfo`.
 ## Projection and downstream analysis
 
 ::: scfo.project_ontology
+::: scfo.collapse_projected_ontology_scores
 ::: scfo.diff_exp_ontology
 ::: scfo.signature_enrichment
-::: scfo.collapse_projected_ontology_scores
+
+## Plotting
+
+::: scfo.plot_factor_top_features
+::: scfo.plot_modality_feature_top_items
 
 ## Data access helpers
 
@@ -27,11 +32,6 @@ This page documents the public Python API for `scfo`.
 ::: scfo.get_factor_scores
 ::: scfo.query_gene_set
 ::: scfo.top_features_for_factor
-
-## Plotting
-
-::: scfo.plot_factor_top_features
-::: scfo.plot_modality_feature_top_items
 
 ## I/O
 
