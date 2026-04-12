@@ -27,3 +27,6 @@ See `docs/vignette.md` for a full end-to-end example and ReadTheDocs for detaile
 Google Drive with example data: https://drive.google.com/drive/folders/1V0PoMmk5PseL3cSd1xrHr_btArUtjnhI?usp=sharing
 
 **To request access to example data on Google Drive, email Matt Warren at mrw2204@cumc.columbia.edu**
+
+## Licensing
+*Licensing for this repository is currently under discussion with collaborators/institution. Until then, all rights are reserved unless explicit permission is granted.*
