@@ -4,7 +4,7 @@ repo_url: https://github.com/mrw2204/scFactor-Ontology
 repo_name: mrw2204/scFactor-Ontology
 
 theme:
-  name: mkdocs
+  name: readthedocs
   features:
     - navigation.tabs
     - navigation.sections
