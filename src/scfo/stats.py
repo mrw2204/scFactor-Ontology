@@ -12,6 +12,53 @@ def collect_score_matrices(
     adata: ad.AnnData,
     ontology_keys: Union[str, Sequence[str]],
 ) -> pd.DataFrame:
+    """
+    Collect one or more ontology-derived score matrices or metadata columns into a single DataFrame.
+
+    This helper pulls requested features from either ``adata.obsm`` or
+    ``adata.obs`` and concatenates them column-wise into a single
+    observation-by-feature matrix suitable for downstream testing.
+
+    Retrieval rules are:
+
+    - if a requested key is present in ``adata.obsm``, it must be stored as a
+      pandas DataFrame and is appended directly
+    - otherwise, if the key is present in ``adata.obs.columns``, that single
+      metadata column is appended
+    - otherwise, an error is raised
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        AnnData object containing projected ontology score matrices in
+        ``.obsm`` and/or scalar metadata in ``.obs``.
+    ontology_keys : str or sequence of str
+        Key or keys to retrieve. Each key may refer either to a DataFrame stored
+        in ``adata.obsm`` or to a single column in ``adata.obs``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Concatenated DataFrame with observations as rows and collected ontology
+        score columns as columns. The row index matches ``adata.obs_names``.
+
+    Raises
+    ------
+    KeyError
+        If any requested key is found in neither ``adata.obsm`` nor
+        ``adata.obs.columns``.
+    TypeError
+        If a requested key is present in ``adata.obsm`` but the stored object is
+        not a pandas DataFrame.
+    ValueError
+        If the concatenated output contains duplicate column names.
+
+    Notes
+    -----
+    This function currently requires projected score matrices in ``adata.obsm``
+    to be stored as DataFrames rather than sparse arrays or NumPy matrices, in
+    order to preserve column labels portably.
+    """
     if isinstance(ontology_keys, str):
         ontology_keys = [ontology_keys]
     mats: List[pd.DataFrame] = []
@@ -50,78 +97,94 @@ def diff_exp_ontology(
     key_added: str = "rank_genes_groups",
     pval_thresh: Optional[float] = None,
 ) -> Tuple[ad.AnnData, pd.DataFrame]:
-    """Test projected ontology scores between categories in ``adata_in.obs``.
+    """
+    Test projected ontology scores for differential abundance across groups.
 
-    This function compares projected ontology scores across groups defined by
-    ``adata_in.obs[groupby]`` using :func:`scanpy.tl.rank_genes_groups`.
-    Scores are collected from one or more entries in ``adata_in.obsm`` (preferred)
-    or ``adata_in.obs`` using :func:`collect_score_matrices`.
+    This function treats projected ontology scores as the variables of interest
+    and compares them across categories defined by ``adata_in.obs[groupby]``
+    using :func:`scanpy.tl.rank_genes_groups`. The input score space is built by
+    collecting one or more matrices or columns via :func:`collect_score_matrices`.
 
-    The function can operate either at single-cell resolution or on pseudobulked
-    observations. In pseudobulk mode, cells are aggregated across combinations of
-    ``groupby`` and ``pseudo_bulk_by`` using the requested summary statistic.
+    Two analysis modes are supported:
+
+    - **single-cell mode**: each observation in ``adata_in`` is tested directly
+    - **pseudobulk mode**: cells are aggregated across combinations of
+      ``groupby`` and ``pseudo_bulk_by`` using the requested summary statistic,
+      and testing is then performed on the aggregated samples
+
+    Optional cell-type subsetting can be applied before either workflow.
 
     Parameters
     ----------
     adata_in : anndata.AnnData
-        AnnData object containing projected ontology scores and grouping metadata.
+        AnnData object containing projected ontology scores and grouping
+        metadata.
     ontology_keys : str or sequence of str
-        Keys identifying ontology score matrices or columns to test. These are passed
-        to :func:`collect_score_matrices`, which is expected to return a DataFrame
-        with observations as rows and ontology scores as columns.
+        Keys identifying ontology-derived score matrices or scalar columns to
+        test. These are passed to :func:`collect_score_matrices`.
     groupby : str
-        Column in ``adata_in.obs`` defining the biological groups to compare.
+        Column in ``adata_in.obs`` defining the groups to compare.
     cell_type : str, optional
-        If provided, subset ``adata_in`` to cells where
+        If provided, subset to observations satisfying
         ``adata_in.obs[cell_type_key] == cell_type`` before testing.
     cell_type_key : str, default="classification"
-        Column in ``adata_in.obs`` used to define cell types when ``cell_type`` is
-        provided.
+        Column in ``adata_in.obs`` used for optional cell-type subsetting.
     reference : str, default="rest"
-        Reference group passed to :func:`scanpy.tl.rank_genes_groups`. The default
-        ``"rest"`` performs one-vs-all comparisons.
+        Reference group passed to :func:`scanpy.tl.rank_genes_groups`. The
+        default ``"rest"`` performs one-vs-all comparisons.
     method : str, default="wilcoxon"
-        Differential testing method passed to
-        :func:`scanpy.tl.rank_genes_groups`.
+        Statistical test used by :func:`scanpy.tl.rank_genes_groups`.
     pseudo_bulk : bool, default=False
-        Whether to aggregate cells into pseudobulk units before testing.
+        Whether to aggregate cells into pseudobulk units prior to testing.
     pseudo_bulk_by : str or sequence of str, optional
-        Column(s) in ``adata_in.obs`` defining pseudobulk units. Required when
-        ``pseudo_bulk=True``. Aggregation is performed over the unique combinations
-        of ``groupby`` and ``pseudo_bulk_by``.
+        One or more columns in ``adata_in.obs`` defining pseudobulk units.
+        Required when ``pseudo_bulk=True``. Aggregation is performed across the
+        unique combinations of ``groupby`` and ``pseudo_bulk_by``.
     min_cells_pseudobulk : int, optional
         Minimum number of cells required for a pseudobulk group to be retained.
-        Pseudobulk groups with fewer than this number of cells are removed before
-        aggregation. Only used when ``pseudo_bulk=True``.
+        Only used when ``pseudo_bulk=True``.
     min_cells_pseudo_bulk : int, optional
         Deprecated alias for ``min_cells_pseudobulk`` retained for backward
         compatibility.
     summary_metric : {"mean", "median", "sum"}, default="mean"
-        Aggregation statistic used to combine cells within each pseudobulk group.
+        Summary statistic used to aggregate ontology scores within each
+        pseudobulk group.
     key_added : str, default="rank_genes_groups"
-        Key under which Scanpy stores differential testing results in ``.uns``.
+        Key under which Scanpy stores differential testing results in
+        ``test_adata.uns``.
     pval_thresh : float, optional
-        If provided, filter the returned results table to rows with
-        ``pvals_adj < pval_thresh``. Ignored when adjusted p-values are not present
-        in the result table.
+        If provided, filter the returned long-form results table to rows with
+        ``pvals_adj < pval_thresh`` when adjusted p-values are available.
 
     Returns
     -------
-    tuple
-        A tuple ``(test_adata, results_df)`` where:
-
-        - ``test_adata`` is the AnnData object actually used for testing
-          (single-cell or pseudobulk score space).
-        - ``results_df`` is a long-form DataFrame returned by
-          :func:`scanpy.get.rank_genes_groups_df`.
+    test_adata : anndata.AnnData
+        AnnData object actually used for testing. In single-cell mode this
+        contains the collected ontology score matrix for the selected cells. In
+        pseudobulk mode this contains the aggregated pseudobulk score matrix,
+        with pseudobulk metadata in ``.obs`` and an additional ``n_cells``
+        column recording how many cells contributed to each pseudobulk sample.
+    results_df : pandas.DataFrame
+        Long-form differential testing results returned by
+        :func:`scanpy.get.rank_genes_groups_df`.
 
     Raises
     ------
     KeyError
-        If required columns are missing from ``adata_in.obs``.
+        If required columns such as ``groupby``, ``cell_type_key``, or
+        ``pseudo_bulk_by`` columns are missing from ``adata_in.obs``.
     ValueError
-        If inputs are invalid, if subsetting removes all cells, if score matrices are
-        empty, or if too few groups remain for comparison.
+        If inputs are inconsistent, if no observations remain after subsetting,
+        if no ontology score columns are collected, if no pseudobulk samples
+        remain after filtering/aggregation, if fewer than two groups remain for
+        testing, or if a non-``"rest"`` reference is absent from the grouped
+        categories.
+
+    Notes
+    -----
+    In pseudobulk mode, aggregation is performed after joining collected
+    ontology scores with the requested metadata columns. Pseudobulk samples are
+    indexed by concatenating grouping values with ``"|"``.
     """
     if groupby not in adata_in.obs.columns:
         raise KeyError(f"groupby '{groupby}' not found in adata_in.obs.")
