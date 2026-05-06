@@ -17,17 +17,17 @@ docs_dir: docs
 nav:
   - Home: index.md
   - API: api.md
-  - Tutorials:
-      - scFO Overview + General Workflow: vignette.md
-      - Tutorial 1 - Construction: Tutorial_1_Construction.ipynb
-      - Tutorial 2 - Visualization: Tutorial_2_Visualization.ipynb
-      - Tutorial 3 - Projection: Tutorial_3_Projection.ipynb
-      - Tutorial 4 - Spatial: Tutorial_4_Spatial.ipynb
-      - Tutorial 5 - scHPF: Tutorial_5_scHPF.ipynb
-      - Tutorial 6 - LGG: Tutorial_6_LGG.ipynb
-      - Tutorial 7 - Perturbation: Tutorial_7_Perturbation.ipynb
-      - Tutorial 8 - TS Ontology: Tutorial_8_TS_Ontology.ipynb
-      - Tutorial 9 - TS Biopsy Model: Tutorial_9_TS_Biopsy_Model.ipynb
+  #- Tutorials:
+  #    - scFO Overview + General Workflow: vignette.md
+  #    - Tutorial 1 - Construction: Tutorial_1_Construction.ipynb
+  #    - Tutorial 2 - Visualization: Tutorial_2_Visualization.ipynb
+  #    - Tutorial 3 - Projection: Tutorial_3_Projection.ipynb
+  #    - Tutorial 4 - Spatial: Tutorial_4_Spatial.ipynb
+  #    - Tutorial 5 - scHPF: Tutorial_5_scHPF.ipynb
+  #    - Tutorial 6 - LGG: Tutorial_6_LGG.ipynb
+  #    - Tutorial 7 - Perturbation: Tutorial_7_Perturbation.ipynb
+  #    - Tutorial 8 - TS Ontology: Tutorial_8_TS_Ontology.ipynb
+  #    - Tutorial 9 - TS Biopsy Model: Tutorial_9_TS_Biopsy_Model.ipynb
 
 plugins:
   - search
