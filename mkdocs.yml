@@ -29,6 +29,11 @@ nav:
   #    - Tutorial 8 - TS Ontology: Tutorial_8_TS_Ontology.ipynb
   #    - Tutorial 9 - TS Biopsy Model: Tutorial_9_TS_Biopsy_Model.ipynb
 
+exclude_docs: |
+  api.md
+  vignette.md
+  Tutorial_*.ipynb
+
 plugins:
   - search
   - mkdocs-jupyter:
